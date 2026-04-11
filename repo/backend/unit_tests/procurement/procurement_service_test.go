@@ -600,7 +600,7 @@ func TestReturn_ReceivedToReturned(t *testing.T) {
 	}
 	lineRepo.byPO[poID] = append(lineRepo.byPO[poID], lineID)
 
-	if err := svc.Return(context.Background(), poID); err != nil {
+	if err := svc.Return(context.Background(), poID, uuid.New()); err != nil {
 		t.Fatalf("Return failed: %v", err)
 	}
 
@@ -632,7 +632,7 @@ func TestVoid_ApprovedToVoided(t *testing.T) {
 	}
 	poRepo.orders[poID] = po
 
-	if err := svc.Void(context.Background(), poID); err != nil {
+	if err := svc.Void(context.Background(), poID, uuid.New()); err != nil {
 		t.Fatalf("Void failed: %v", err)
 	}
 

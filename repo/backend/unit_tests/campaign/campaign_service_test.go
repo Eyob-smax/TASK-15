@@ -427,7 +427,7 @@ func TestCampaignEvaluate_MetThreshold_Succeeded(t *testing.T) {
 	}
 
 	now := time.Now()
-	if err := svc.EvaluateAtCutoff(context.Background(), campaignID, now); err != nil {
+	if err := svc.EvaluateAtCutoff(context.Background(), campaignID, now, uuid.New()); err != nil {
 		t.Fatalf("EvaluateAtCutoff failed: %v", err)
 	}
 	if campaigns.campaigns[campaignID].Status != domain.CampaignStatusSucceeded {
@@ -473,7 +473,7 @@ func TestCampaignEvaluate_FailedThreshold_AutoClosesOrders(t *testing.T) {
 	}
 
 	now := time.Now()
-	if err := svc.EvaluateAtCutoff(context.Background(), campaignID, now); err != nil {
+	if err := svc.EvaluateAtCutoff(context.Background(), campaignID, now, uuid.New()); err != nil {
 		t.Fatalf("EvaluateAtCutoff failed: %v", err)
 	}
 	if campaigns.campaigns[campaignID].Status != domain.CampaignStatusFailed {

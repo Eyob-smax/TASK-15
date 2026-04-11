@@ -33,18 +33,12 @@ func TestBiometric_ModuleDisabled_Returns501(t *testing.T) {
 	}
 
 	for _, ep := range endpoints {
-		var rec interface {
-			Code int
-		}
+		var rec = app.post(t, ep.path, map[string]string{}, cookies)
 		if ep.method == http.MethodGet {
 			rec = app.get(t, ep.path, cookies)
-		} else {
-			rec = app.post(t, ep.path, map[string]string{}, cookies)
 		}
-		if r, ok := rec.(interface{ Code int }); ok {
-			if r.Code != http.StatusNotImplemented {
-				t.Errorf("%s %s: expected 501, got %d", ep.method, ep.path, r.Code)
-			}
+		if rec.Code != http.StatusNotImplemented {
+			t.Errorf("%s %s: expected 501, got %d", ep.method, ep.path, rec.Code)
 		}
 	}
 }

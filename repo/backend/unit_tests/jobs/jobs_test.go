@@ -81,7 +81,7 @@ func (m *mockCampaignService) ListPastCutoff(_ context.Context, _ time.Time) ([]
 	m.listPastCutoffCalls++
 	return m.campaignsToReturn, nil
 }
-func (m *mockCampaignService) EvaluateAtCutoff(_ context.Context, _ uuid.UUID, _ time.Time) error {
+func (m *mockCampaignService) EvaluateAtCutoff(_ context.Context, _ uuid.UUID, _ time.Time, _ uuid.UUID) error {
 	m.evaluateCalls++
 	return nil
 }
@@ -99,7 +99,7 @@ func (m *mockCampaignService) List(_ context.Context, _, _ int) ([]domain.GroupB
 func (m *mockCampaignService) Join(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ int) (*domain.GroupBuyParticipant, error) {
 	return nil, nil
 }
-func (m *mockCampaignService) Cancel(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockCampaignService) Cancel(_ context.Context, _ uuid.UUID, _ uuid.UUID) error { return nil }
 
 // --- Tests ---
 
@@ -204,6 +204,10 @@ func (m *mockBackupService) GetByID(_ context.Context, _ uuid.UUID) (*domain.Bac
 
 func (m *mockBackupService) List(_ context.Context, _, _ int) ([]domain.BackupRun, int, error) {
 	return nil, 0, nil
+}
+
+func (m *mockBackupService) VerifyIntegrity(_ context.Context, _ uuid.UUID) (*domain.BackupRun, error) {
+	return nil, nil
 }
 
 type mockVarianceService struct {

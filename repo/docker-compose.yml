@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: fitcommerce-db
+    environment:
+      POSTGRES_USER: fitcommerce
+      POSTGRES_PASSWORD: fitcommerce
+      POSTGRES_DB: fitcommerce
+    expose:
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcommerce"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fitcommerce-api
+    environment:
+      FC_SERVER_PORT: "8080"
+      FC_DATABASE_URL: "postgres://fitcommerce:fitcommerce@postgres:5432/fitcommerce?sslmode=prefer"
+      FC_RUN_MIGRATIONS_ON_STARTUP: "true"
+      FC_RUN_SEED_ON_STARTUP: "true"
+      FC_LOG_LEVEL: "info"
+      FC_CLUB_TIMEZONE: "America/New_York"
+      FC_BACKUP_PATH: "/var/backups/fitcommerce"
+      FC_SESSION_IDLE_TIMEOUT_MINUTES: "30"
+      FC_SESSION_ABSOLUTE_TIMEOUT_HOURS: "12"
+      FC_LOGIN_LOCKOUT_THRESHOLD: "5"
+      FC_LOGIN_LOCKOUT_DURATION_MINUTES: "15"
+      FC_BIOMETRIC_MODULE_ENABLED: "false"
+      FC_BIOMETRIC_KEY_ROTATION_DAYS: "90"
+      FC_EXPORT_PATH: "/var/exports/fitcommerce"
+      # Local dev backup encryption key — replace with a secrets-manager reference in production
+      FC_BACKUP_ENCRYPTION_KEY_REF: "dev-local-key-do-not-use-in-production"
+      # Secure transport is the default. When no explicit backend certificate
+      # is mounted, the API generates an ephemeral self-signed certificate at startup.
+      # Override to true only for explicitly local, non-production debugging.
+      FC_ALLOW_INSECURE_HTTP: "${FC_ALLOW_INSECURE_HTTP:-false}"
+      # FC_TLS_CERT_FILE: "/etc/ssl/certs/server.crt"
+      # FC_TLS_KEY_FILE: "/etc/ssl/certs/server.key"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backups:/var/backups/fitcommerce
+      - exports:/var/exports/fitcommerce
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fitcommerce-ui
+    ports:
+      - "3000:3000" # HTTP endpoint (redirects to HTTPS)
+      - "3443:3443" # HTTPS UI endpoint
+    depends_on:
+      - backend
+
+  # ----------------------------------------
+  # Test services — only active under --profile test.
+  # Run via: ./run_tests.sh
+  # Never started alongside the application services.
+  # ----------------------------------------
+
+  backend-test:
+    image: golang:1.22-alpine
+    profiles: ["test"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - go-test-mod-cache:/go/pkg/mod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CGO_ENABLED: "0"
+      FC_DATABASE_URL: "postgres://fitcommerce:fitcommerce@postgres:5432/fitcommerce?sslmode=disable"
+      FC_RUN_MIGRATIONS_ON_STARTUP: "false"
+      FC_RUN_SEED_ON_STARTUP: "false"
+      FC_ALLOW_INSECURE_HTTP: "true"
+      FC_EXPORT_PATH: "/tmp/fitcommerce-exports"
+      FC_BACKUP_PATH: "/tmp/fitcommerce-backups"
+      FC_BACKUP_ENCRYPTION_KEY_REF: "integration-test-backup-key"
+
+  frontend-test:
+    image: node:20-alpine
+    profiles: ["test"]
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend-test-node-modules:/app/node_modules
+
+volumes:
+  pgdata:
+  backups:
+  exports:
+  go-test-mod-cache:
+  frontend-test-node-modules:

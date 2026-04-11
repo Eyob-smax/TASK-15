@@ -55,6 +55,80 @@ async function executeMutation(entry: OfflineMutationEntry): Promise<void> {
     case "run-export":
       await apiClient.post("/exports", entry.payload);
       return;
+    case "cancel-order":
+      await apiClient.post(`/orders/${entry.payload.id}/cancel`, {});
+      return;
+    case "pay-order":
+      await apiClient.post(`/orders/${entry.payload.id}/pay`, {
+        settlement_marker: entry.payload.settlementMarker,
+      });
+      return;
+    case "join-campaign":
+      await apiClient.post(`/campaigns/${entry.payload.id}/join`, {
+        quantity: entry.payload.quantity,
+      });
+      return;
+    case "cancel-campaign":
+      await apiClient.post(`/campaigns/${entry.payload.id}/cancel`, {});
+      return;
+    case "create-po":
+      await apiClient.post("/purchase-orders", entry.payload);
+      return;
+    case "approve-po":
+      await apiClient.post(`/purchase-orders/${entry.payload.id}/approve`, {});
+      return;
+    case "receive-po":
+      await apiClient.post(
+        `/purchase-orders/${entry.payload.id}/receive`,
+        entry.payload.body,
+      );
+      return;
+    case "void-po":
+      await apiClient.post(`/purchase-orders/${entry.payload.id}/void`, {});
+      return;
+    case "refund-order":
+      await apiClient.post(`/orders/${entry.payload.id}/refund`, {});
+      return;
+    case "add-order-note":
+      await apiClient.post(`/orders/${entry.payload.id}/notes`, {
+        note: entry.payload.note,
+      });
+      return;
+    case "split-order":
+      await apiClient.post(`/orders/${entry.payload.id}/split`, {
+        quantities: entry.payload.quantities,
+        supplier_id: entry.payload.supplier_id,
+        warehouse_bin_id: entry.payload.warehouse_bin_id,
+        pickup_point: entry.payload.pickup_point,
+      });
+      return;
+    case "merge-order":
+      await apiClient.post(`/orders/merge`, {
+        order_ids: entry.payload.order_ids,
+        supplier_id: entry.payload.supplier_id,
+        warehouse_bin_id: entry.payload.warehouse_bin_id,
+        pickup_point: entry.payload.pickup_point,
+      });
+      return;
+    case "evaluate-campaign":
+      await apiClient.post(`/campaigns/${entry.payload.id}/evaluate`, {});
+      return;
+    case "create-campaign":
+      await apiClient.post("/campaigns", entry.payload);
+      return;
+    case "create-adjustment":
+      await apiClient.post("/inventory/adjustments", entry.payload);
+      return;
+    case "return-po":
+      await apiClient.post(`/purchase-orders/${entry.payload.id}/return`, {});
+      return;
+    case "resolve-variance":
+      await apiClient.post(`/variances/${entry.payload.id}/resolve`, {
+        action: entry.payload.action,
+        resolution_notes: entry.payload.resolution_notes,
+        quantity_change: entry.payload.quantity_change,
+      });
+      return;
     default:
       return;
   }
@@ -94,6 +168,11 @@ export async function replayOfflineMutations(
 
   if (processed > 0) {
     queryClient.invalidateQueries({ queryKey: ["items"] });
+    queryClient.invalidateQueries({ queryKey: ["orders"] });
+    queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    queryClient.invalidateQueries({ queryKey: ["variances"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: ["exports"] });
   }

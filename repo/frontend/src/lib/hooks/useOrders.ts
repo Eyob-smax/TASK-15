@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type ApiEnvelope, type ApiMessage, type PaginatedResponse } from '@/lib/api-client';
+import { enqueueOfflineMutation } from '@/lib/offline-cache';
 import type { Order, OrderTimelineEntry } from '@/lib/types';
 
 interface OrderListParams {
@@ -45,8 +46,18 @@ export function useOrderTimeline(id: string | undefined) {
 export function useCancelOrder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/orders/${id}/cancel`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-cancel-order`,
+          type: 'cancel-order',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/orders/${id}/cancel`, {});
+    },
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['orders', id] });
@@ -62,10 +73,20 @@ interface PayOrderPayload {
 export function usePayOrder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, settlementMarker }: PayOrderPayload) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/orders/${id}/pay`, {
+    mutationFn: async ({ id, settlementMarker }: PayOrderPayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-pay-order`,
+          type: 'pay-order',
+          payload: { id, settlementMarker },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/orders/${id}/pay`, {
         settlement_marker: settlementMarker,
-      }),
+      });
+    },
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['orders', id] });
@@ -76,8 +97,18 @@ export function usePayOrder() {
 export function useRefundOrder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/orders/${id}/refund`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-refund-order`,
+          type: 'refund-order',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/orders/${id}/refund`, {});
+    },
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['orders', id] });
@@ -93,8 +124,18 @@ interface AddNotePayload {
 export function useAddOrderNote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, note }: AddNotePayload) =>
-      apiClient.post(`/orders/${id}/notes`, { note }),
+    mutationFn: async ({ id, note }: AddNotePayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-add-order-note`,
+          type: 'add-order-note',
+          payload: { id, note },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post(`/orders/${id}/notes`, { note });
+    },
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['orders', id, 'timeline'] });
     },
@@ -104,8 +145,34 @@ export function useAddOrderNote() {
 export function useSplitOrder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, quantities }: { id: string; quantities: number[] }) => {
-      const response = await apiClient.post<ApiEnvelope<Order[]>>(`/orders/${id}/split`, { quantities });
+    mutationFn: async ({
+      id,
+      quantities,
+      supplier_id,
+      warehouse_bin_id,
+      pickup_point,
+    }: {
+      id: string;
+      quantities: number[];
+      supplier_id?: string;
+      warehouse_bin_id?: string;
+      pickup_point?: string;
+    }) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-split-order`,
+          type: 'split-order',
+          payload: { id, quantities, supplier_id, warehouse_bin_id, pickup_point },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      const response = await apiClient.post<ApiEnvelope<Order[]>>(`/orders/${id}/split`, {
+        quantities,
+        supplier_id,
+        warehouse_bin_id,
+        pickup_point,
+      });
       return response.data;
     },
     onSuccess: (_, variables) => {
@@ -119,8 +186,32 @@ export function useSplitOrder() {
 export function useMergeOrder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ order_ids }: { order_ids: string[] }) => {
-      const response = await apiClient.post<ApiEnvelope<Order>>(`/orders/merge`, { order_ids });
+    mutationFn: async ({
+      order_ids,
+      supplier_id,
+      warehouse_bin_id,
+      pickup_point,
+    }: {
+      order_ids: string[];
+      supplier_id?: string;
+      warehouse_bin_id?: string;
+      pickup_point?: string;
+    }) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-merge-order`,
+          type: 'merge-order',
+          payload: { order_ids, supplier_id, warehouse_bin_id, pickup_point },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      const response = await apiClient.post<ApiEnvelope<Order>>(`/orders/merge`, {
+        order_ids,
+        supplier_id,
+        warehouse_bin_id,
+        pickup_point,
+      });
       return response.data;
     },
     onSuccess: () => {

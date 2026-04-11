@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"fitcommerce/internal/domain"
+	"fitcommerce/internal/platform"
 	"fitcommerce/internal/security"
 	"fitcommerce/internal/store"
 )
@@ -21,6 +22,7 @@ type BiometricServiceImpl struct {
 	auditSvc      AuditService
 	txPool        *pgxpool.Pool
 	rotationDays  int
+	cfg           platform.Config
 }
 
 // NewBiometricService creates a BiometricServiceImpl backed by the given repositories.
@@ -30,6 +32,7 @@ func NewBiometricService(
 	auditSvc AuditService,
 	txPool *pgxpool.Pool,
 	rotationDays int,
+	cfg platform.Config,
 ) *BiometricServiceImpl {
 	if rotationDays <= 0 {
 		rotationDays = 90
@@ -40,7 +43,25 @@ func NewBiometricService(
 		auditSvc:      auditSvc,
 		txPool:        txPool,
 		rotationDays:  rotationDays,
+		cfg:           cfg,
 	}
+}
+
+// unwrapDEK derives the KEK from the configured master key reference and uses it
+// to unwrap the DEK stored in the given EncryptionKey.
+func (s *BiometricServiceImpl) unwrapDEK(key *domain.EncryptionKey) ([]byte, error) {
+	if len(key.WrappedDEK) == 0 {
+		return nil, fmt.Errorf("biometric: encryption key %s has no wrapped DEK — key rotation required", key.ID)
+	}
+	kek, err := security.DeriveKeyFromRef(s.cfg.BiometricMasterKeyRef)
+	if err != nil {
+		return nil, fmt.Errorf("biometric: KEK derivation failed: %w", err)
+	}
+	dek, err := security.UnwrapDEK(key.WrappedDEK, kek)
+	if err != nil {
+		return nil, fmt.Errorf("biometric: DEK unwrap failed: %w", err)
+	}
+	return dek, nil
 }
 
 // Register creates a new biometric enrollment for the given user. The
@@ -53,9 +74,9 @@ func (s *BiometricServiceImpl) Register(ctx context.Context, userID uuid.UUID, t
 		return nil, fmt.Errorf("biometric.Register: no active encryption key: %w", err)
 	}
 
-	aesKey, err := security.DeriveKeyFromRef(activeKey.KeyReference)
+	aesKey, err := s.unwrapDEK(activeKey)
 	if err != nil {
-		return nil, fmt.Errorf("biometric.Register: key derivation failed: %w", err)
+		return nil, fmt.Errorf("biometric.Register: %w", err)
 	}
 
 	encrypted, err := security.EncryptAESGCM([]byte(templateRef), aesKey)
@@ -126,26 +147,37 @@ func (s *BiometricServiceImpl) RotateKey(ctx context.Context, performedBy uuid.U
 			return err
 		}
 
+		// Generate a fresh random DEK for the new key slot.
+		newDEK, err := security.GenerateAESKey()
+		if err != nil {
+			return fmt.Errorf("biometric.RotateKey: DEK generation failed: %w", err)
+		}
+		kek, err := security.DeriveKeyFromRef(s.cfg.BiometricMasterKeyRef)
+		if err != nil {
+			return fmt.Errorf("biometric.RotateKey: KEK derivation failed: %w", err)
+		}
+		wrappedDEK, err := security.WrapDEK(newDEK, kek)
+		if err != nil {
+			return fmt.Errorf("biometric.RotateKey: DEK wrap failed: %w", err)
+		}
+
 		newKey = &domain.EncryptionKey{
 			ID:           uuid.New(),
 			KeyReference: uuid.New().String(),
+			WrappedDEK:   wrappedDEK,
 			Purpose:      "biometric",
 			Status:       domain.EncryptionKeyStatusActive,
 			ActivatedAt:  time.Now().UTC(),
 			ExpiresAt:    time.Now().UTC().AddDate(0, 0, s.rotationDays),
 		}
+		newAESKey := newDEK
 
 		var oldAESKey []byte
 		if oldKey != nil && err != domain.ErrNotFound {
-			oldAESKey, err = security.DeriveKeyFromRef(oldKey.KeyReference)
+			oldAESKey, err = s.unwrapDEK(oldKey)
 			if err != nil {
-				return fmt.Errorf("biometric.RotateKey old key derivation failed: %w", err)
+				return fmt.Errorf("biometric.RotateKey old key unwrap failed: %w", err)
 			}
-		}
-
-		newAESKey, err := security.DeriveKeyFromRef(newKey.KeyReference)
-		if err != nil {
-			return fmt.Errorf("biometric.RotateKey new key derivation failed: %w", err)
 		}
 
 		if err := s.encKeyRepo.Create(txCtx, newKey); err != nil {
@@ -215,7 +247,9 @@ func (s *BiometricServiceImpl) ListKeys(ctx context.Context) ([]domain.Encryptio
 
 func (s *BiometricServiceImpl) ensureActiveKey(ctx context.Context) (*domain.EncryptionKey, error) {
 	activeKey, err := s.encKeyRepo.GetActive(ctx, "biometric")
-	if errors.Is(err, domain.ErrNotFound) {
+	if errors.Is(err, domain.ErrNotFound) || (err == nil && len(activeKey.WrappedDEK) == 0) {
+		// No active key, or the active key pre-dates envelope encryption (legacy row).
+		// Rotate to create a proper key with a wrapped DEK.
 		if _, rotateErr := s.RotateKey(ctx, domain.SystemActorID); rotateErr != nil {
 			return nil, rotateErr
 		}

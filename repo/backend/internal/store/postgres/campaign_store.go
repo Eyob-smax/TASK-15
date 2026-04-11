@@ -44,11 +44,11 @@ func (s *CampaignStore) Create(ctx context.Context, campaign *domain.GroupBuyCam
 	db := executorFromContext(ctx, s.pool)
 	const q = `
 		INSERT INTO group_buy_campaigns
-			(id, item_id, min_quantity, current_committed_qty, cutoff_time,
+			(id, item_id, min_quantity, max_quantity, current_committed_qty, cutoff_time,
 			 status, created_by, created_at, evaluated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
 	_, err := db.Exec(ctx, q,
-		campaign.ID, campaign.ItemID, campaign.MinQuantity,
+		campaign.ID, campaign.ItemID, campaign.MinQuantity, campaign.MaxQuantity,
 		campaign.CurrentCommittedQty, campaign.CutoffTime,
 		string(campaign.Status), campaign.CreatedBy, campaign.CreatedAt,
 		campaign.EvaluatedAt,
@@ -59,7 +59,7 @@ func (s *CampaignStore) Create(ctx context.Context, campaign *domain.GroupBuyCam
 func (s *CampaignStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.GroupBuyCampaign, error) {
 	db := executorFromContext(ctx, s.pool)
 	const q = `
-		SELECT id, item_id, min_quantity, current_committed_qty, cutoff_time,
+		SELECT id, item_id, min_quantity, max_quantity, current_committed_qty, cutoff_time,
 		       status, created_by, created_at, evaluated_at
 		FROM group_buy_campaigns WHERE id = $1`
 	campaign, err := scanCampaign(db.QueryRow(ctx, q, id))
@@ -80,7 +80,7 @@ func (s *CampaignStore) List(ctx context.Context, page, pageSize int) ([]domain.
 	}
 
 	const q = `
-		SELECT id, item_id, min_quantity, current_committed_qty, cutoff_time,
+		SELECT id, item_id, min_quantity, max_quantity, current_committed_qty, cutoff_time,
 		       status, created_by, created_at, evaluated_at
 		FROM group_buy_campaigns
 		ORDER BY created_at DESC LIMIT $1 OFFSET $2`
@@ -120,7 +120,7 @@ func (s *CampaignStore) Update(ctx context.Context, campaign *domain.GroupBuyCam
 func (s *CampaignStore) ListActive(ctx context.Context) ([]domain.GroupBuyCampaign, error) {
 	db := executorFromContext(ctx, s.pool)
 	const q = `
-		SELECT id, item_id, min_quantity, current_committed_qty, cutoff_time,
+		SELECT id, item_id, min_quantity, max_quantity, current_committed_qty, cutoff_time,
 		       status, created_by, created_at, evaluated_at
 		FROM group_buy_campaigns
 		WHERE status = 'active' AND cutoff_time > NOW()
@@ -147,7 +147,7 @@ func (s *CampaignStore) ListActive(ctx context.Context) ([]domain.GroupBuyCampai
 func (s *CampaignStore) ListDueCampaigns(ctx context.Context, now time.Time) ([]domain.GroupBuyCampaign, error) {
 	db := executorFromContext(ctx, s.pool)
 	const q = `
-		SELECT id, item_id, min_quantity, current_committed_qty, cutoff_time,
+		SELECT id, item_id, min_quantity, max_quantity, current_committed_qty, cutoff_time,
 		       status, created_by, created_at, evaluated_at
 		FROM group_buy_campaigns
 		WHERE status = 'active' AND cutoff_time <= $1
@@ -228,7 +228,7 @@ func scanCampaign(row campaignScannable) (*domain.GroupBuyCampaign, error) {
 	var c domain.GroupBuyCampaign
 	var status string
 	err := row.Scan(
-		&c.ID, &c.ItemID, &c.MinQuantity, &c.CurrentCommittedQty,
+		&c.ID, &c.ItemID, &c.MinQuantity, &c.MaxQuantity, &c.CurrentCommittedQty,
 		&c.CutoffTime, &status, &c.CreatedBy, &c.CreatedAt, &c.EvaluatedAt,
 	)
 	if err != nil {

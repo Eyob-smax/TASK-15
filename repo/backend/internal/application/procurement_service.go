@@ -267,7 +267,7 @@ func (s *PurchaseOrderServiceImpl) Receive(ctx context.Context, id uuid.UUID, re
 }
 
 // Return transitions a purchase order to the returned status.
-func (s *PurchaseOrderServiceImpl) Return(ctx context.Context, id uuid.UUID) error {
+func (s *PurchaseOrderServiceImpl) Return(ctx context.Context, id uuid.UUID, performedBy uuid.UUID) error {
 	return withOptionalTransaction(ctx, s.txPool, func(txCtx context.Context) error {
 		po, err := s.poRepo.GetByID(txCtx, id)
 		if err != nil {
@@ -286,7 +286,7 @@ func (s *PurchaseOrderServiceImpl) Return(ctx context.Context, id uuid.UUID) err
 		now := time.Now().UTC()
 		for _, line := range lines {
 			if line.ReceivedQuantity != nil && *line.ReceivedQuantity > 0 {
-				if err := s.inventoryCoordinator().applyChange(txCtx, line.ItemID, -*line.ReceivedQuantity, "po-return", domain.SystemActorID, now); err != nil {
+				if err := s.inventoryCoordinator().applyChange(txCtx, line.ItemID, -*line.ReceivedQuantity, "po-return", performedBy, now); err != nil {
 					return err
 				}
 			}
@@ -294,7 +294,7 @@ func (s *PurchaseOrderServiceImpl) Return(ctx context.Context, id uuid.UUID) err
 		if err := s.poRepo.Update(txCtx, po); err != nil {
 			return fmt.Errorf("procurement_service.Return update: %w", err)
 		}
-		if err := s.audit.Log(txCtx, "po.returned", "purchase_order", po.ID, domain.SystemActorID, nil); err != nil {
+		if err := s.audit.Log(txCtx, "po.returned", "purchase_order", po.ID, performedBy, nil); err != nil {
 			slog.Default().Warn("audit log failed", "event", "po.returned", "error", err)
 			return err
 		}
@@ -303,7 +303,7 @@ func (s *PurchaseOrderServiceImpl) Return(ctx context.Context, id uuid.UUID) err
 }
 
 // Void transitions a purchase order to the voided status.
-func (s *PurchaseOrderServiceImpl) Void(ctx context.Context, id uuid.UUID) error {
+func (s *PurchaseOrderServiceImpl) Void(ctx context.Context, id uuid.UUID, performedBy uuid.UUID) error {
 	return withOptionalTransaction(ctx, s.txPool, func(txCtx context.Context) error {
 		po, err := s.poRepo.GetByID(txCtx, id)
 		if err != nil {
@@ -318,7 +318,7 @@ func (s *PurchaseOrderServiceImpl) Void(ctx context.Context, id uuid.UUID) error
 		if err := s.poRepo.Update(txCtx, po); err != nil {
 			return fmt.Errorf("procurement_service.Void update: %w", err)
 		}
-		if err := s.audit.Log(txCtx, "po.voided", "purchase_order", po.ID, domain.SystemActorID, nil); err != nil {
+		if err := s.audit.Log(txCtx, "po.voided", "purchase_order", po.ID, performedBy, nil); err != nil {
 			slog.Default().Warn("audit log failed", "event", "po.voided", "error", err)
 			return err
 		}

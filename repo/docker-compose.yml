@@ -38,12 +38,11 @@ services:
       FC_EXPORT_PATH: "/var/exports/fitcommerce"
       # Local dev backup encryption key — replace with a secrets-manager reference in production
       FC_BACKUP_ENCRYPTION_KEY_REF: "dev-local-key-do-not-use-in-production"
-      # Secure transport is the default. When no explicit backend certificate
-      # is mounted, the API generates an ephemeral self-signed certificate at startup.
-      # Override to true only for explicitly local, non-production debugging.
+      # Secure transport is the default. The certificate is written to a shared
+      # volume so nginx can verify it without disabling TLS verification.
       FC_ALLOW_INSECURE_HTTP: "${FC_ALLOW_INSECURE_HTTP:-false}"
-      # FC_TLS_CERT_FILE: "/etc/ssl/certs/server.crt"
-      # FC_TLS_KEY_FILE: "/etc/ssl/certs/server.key"
+      FC_TLS_CERT_FILE: "/etc/ssl/fitcommerce/server.crt"
+      FC_TLS_KEY_FILE: "/etc/ssl/fitcommerce/server.key"
     ports:
       - "8080:8080"
     depends_on:
@@ -52,6 +51,7 @@ services:
     volumes:
       - backups:/var/backups/fitcommerce
       - exports:/var/exports/fitcommerce
+      - ssl-certs:/etc/ssl/fitcommerce
 
   frontend:
     build:
@@ -63,6 +63,8 @@ services:
       - "3443:3443" # HTTPS UI endpoint
     depends_on:
       - backend
+    volumes:
+      - ssl-certs:/etc/nginx/backend-certs:ro
 
   # ----------------------------------------
   # Test services — only active under --profile test.
@@ -102,5 +104,6 @@ volumes:
   pgdata:
   backups:
   exports:
+  ssl-certs:
   go-test-mod-cache:
   frontend-test-node-modules:

@@ -2,12 +2,15 @@ package http
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"fitcommerce/internal/application"
+	"fitcommerce/internal/domain"
 	"fitcommerce/internal/http/dto"
+	"fitcommerce/internal/security"
 )
 
 // DashboardHandler handles HTTP requests for the dashboard KPI endpoint.
@@ -23,6 +26,11 @@ func NewDashboardHandler(svc application.DashboardService) *DashboardHandler {
 // GetKPIs handles GET /api/v1/dashboard/kpis.
 // Optional query params: location_id, period, coach_id, category, from, to.
 func (h *DashboardHandler) GetKPIs(c echo.Context) error {
+	user, ok := security.GetUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, NewErrorResponse("UNAUTHORIZED", "not authenticated"))
+	}
+
 	var locationID *uuid.UUID
 	if v := c.QueryParam("location_id"); v != "" {
 		id, err := uuid.Parse(v)
@@ -30,6 +38,15 @@ func (h *DashboardHandler) GetKPIs(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, NewErrorResponse("BAD_REQUEST", "invalid location_id"))
 		}
 		locationID = &id
+	}
+
+	// Coaches are scoped to their assigned location. A coach with no assigned
+	// location cannot be safely scoped, so deny access entirely.
+	if user.Role == domain.UserRoleCoach {
+		if user.LocationID == nil {
+			return c.JSON(http.StatusForbidden, NewErrorResponse("FORBIDDEN", "coach account has no assigned location"))
+		}
+		locationID = user.LocationID
 	}
 
 	period := c.QueryParam("period")
@@ -49,6 +66,18 @@ func (h *DashboardHandler) GetKPIs(c echo.Context) error {
 	category := c.QueryParam("category")
 	from := c.QueryParam("from")
 	to := c.QueryParam("to")
+
+	const dateLayout = "2006-01-02"
+	if from != "" {
+		if _, err := time.Parse(dateLayout, from); err != nil {
+			return c.JSON(http.StatusUnprocessableEntity, NewErrorResponse("VALIDATION_ERROR", "from must be a date in YYYY-MM-DD format"))
+		}
+	}
+	if to != "" {
+		if _, err := time.Parse(dateLayout, to); err != nil {
+			return c.JSON(http.StatusUnprocessableEntity, NewErrorResponse("VALIDATION_ERROR", "to must be a date in YYYY-MM-DD format"))
+		}
+	}
 
 	kpis, err := h.svc.GetKPIs(c.Request().Context(), locationID, period, coachID, category, from, to)
 	if err != nil {

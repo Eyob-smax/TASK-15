@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type PaginatedResponse } from '@/lib/api-client';
+import { enqueueOfflineMutation } from '@/lib/offline-cache';
 import type { GroupBuyCampaign, GroupBuyParticipant } from '@/lib/types';
 
 interface CampaignListParams {
@@ -49,8 +50,18 @@ interface CreateCampaignPayload {
 export function useJoinCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, quantity }: JoinCampaignPayload) =>
-      apiClient.post<{ data: GroupBuyParticipant }>(`/campaigns/${id}/join`, { quantity }),
+    mutationFn: async ({ id, quantity }: JoinCampaignPayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-join-campaign`,
+          type: 'join-campaign',
+          payload: { id, quantity },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<{ data: GroupBuyParticipant }>(`/campaigns/${id}/join`, { quantity });
+    },
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
       qc.invalidateQueries({ queryKey: ['campaigns', id] });
@@ -62,8 +73,18 @@ export function useJoinCampaign() {
 export function useCancelCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<SingleCampaignResponse>(`/campaigns/${id}/cancel`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-cancel-campaign`,
+          type: 'cancel-campaign',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<SingleCampaignResponse>(`/campaigns/${id}/cancel`, {});
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
     },
@@ -73,8 +94,18 @@ export function useCancelCampaign() {
 export function useEvaluateCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<SingleCampaignResponse>(`/campaigns/${id}/evaluate`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-evaluate-campaign`,
+          type: 'evaluate-campaign',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<SingleCampaignResponse>(`/campaigns/${id}/evaluate`, {});
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
     },
@@ -84,8 +115,18 @@ export function useEvaluateCampaign() {
 export function useCreateCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateCampaignPayload) =>
-      apiClient.post<SingleCampaignResponse>('/campaigns', body),
+    mutationFn: async (body: CreateCampaignPayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-create-campaign`,
+          type: 'create-campaign',
+          payload: body as unknown as Record<string, unknown>,
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<SingleCampaignResponse>('/campaigns', body);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
     },

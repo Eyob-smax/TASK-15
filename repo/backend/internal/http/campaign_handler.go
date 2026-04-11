@@ -46,6 +46,7 @@ func (h *CampaignHandler) CreateCampaign(c echo.Context) error {
 	campaign := &domain.GroupBuyCampaign{
 		ItemID:      itemID,
 		MinQuantity: req.MinQuantity,
+		MaxQuantity: req.MaxQuantity,
 		CutoffTime:  req.CutoffTime,
 		CreatedBy:   user.ID,
 	}
@@ -118,12 +119,17 @@ func (h *CampaignHandler) JoinCampaign(c echo.Context) error {
 
 // CancelCampaign handles POST /api/v1/campaigns/:id/cancel.
 func (h *CampaignHandler) CancelCampaign(c echo.Context) error {
+	user, ok := security.GetUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, NewErrorResponse("UNAUTHORIZED", "not authenticated"))
+	}
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, NewErrorResponse("BAD_REQUEST", "invalid campaign id"))
 	}
 
-	if err := h.svc.Cancel(c.Request().Context(), id); err != nil {
+	if err := h.svc.Cancel(c.Request().Context(), id, user.ID); err != nil {
 		return HandleDomainError(c, err)
 	}
 	return c.JSON(http.StatusOK, dto.SuccessResponse{Data: map[string]string{"message": "campaign cancelled"}})
@@ -131,12 +137,17 @@ func (h *CampaignHandler) CancelCampaign(c echo.Context) error {
 
 // EvaluateCampaign handles POST /api/v1/campaigns/:id/evaluate.
 func (h *CampaignHandler) EvaluateCampaign(c echo.Context) error {
+	user, ok := security.GetUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, NewErrorResponse("UNAUTHORIZED", "not authenticated"))
+	}
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, NewErrorResponse("BAD_REQUEST", "invalid campaign id"))
 	}
 
-	if err := h.svc.EvaluateAtCutoff(c.Request().Context(), id, time.Now().UTC()); err != nil {
+	if err := h.svc.EvaluateAtCutoff(c.Request().Context(), id, time.Now().UTC(), user.ID); err != nil {
 		return HandleDomainError(c, err)
 	}
 	return c.JSON(http.StatusOK, dto.SuccessResponse{Data: map[string]string{"message": "campaign evaluated"}})
@@ -149,6 +160,7 @@ func toCampaignResponse(c *domain.GroupBuyCampaign) dto.CampaignResponse {
 		ID:                  c.ID.String(),
 		ItemID:              c.ItemID.String(),
 		MinQuantity:         c.MinQuantity,
+		MaxQuantity:         c.MaxQuantity,
 		CurrentCommittedQty: c.CurrentCommittedQty,
 		CutoffTime:          c.CutoffTime.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		Status:              string(c.Status),

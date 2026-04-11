@@ -12,6 +12,7 @@ type GroupBuyCampaign struct {
 	ID                  uuid.UUID
 	ItemID              uuid.UUID
 	MinQuantity         int
+	MaxQuantity         *int // optional class capacity; nil if not set
 	CurrentCommittedQty int
 	CutoffTime          time.Time
 	Status              CampaignStatus

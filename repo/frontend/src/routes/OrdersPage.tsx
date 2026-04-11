@@ -10,13 +10,14 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import TextField from '@mui/material/TextField';
 import { OfflineDataNotice } from '@/components/OfflineDataNotice';
 import { PageContainer } from '@/components/PageContainer';
 import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar, type FilterField } from '@/components/FilterBar';
 import { StatusChip } from '@/components/StatusChip';
 import { useAuth } from '@/lib/auth';
-import { OFFLINE_MUTATION_MESSAGE, useOfflineStatus } from '@/lib/offline';
+import { useOfflineStatus } from '@/lib/offline';
 import { useOrderList, useMergeOrder } from '@/lib/hooks/useOrders';
 import { useNotify } from '@/lib/notifications';
 import type { Order } from '@/lib/types';
@@ -53,25 +54,60 @@ function MergeOrdersDialog({
   loading: boolean;
   isOffline: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (supplierID: string, warehouseBinID: string, pickupPoint: string) => void;
 }) {
+  const [supplierID, setSupplierID] = useState('');
+  const [warehouseBinID, setWarehouseBinID] = useState('');
+  const [pickupPoint, setPickupPoint] = useState('');
+
+  const handleClose = () => {
+    setSupplierID('');
+    setWarehouseBinID('');
+    setPickupPoint('');
+    onClose();
+  };
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
       <DialogTitle>Merge Orders</DialogTitle>
       <DialogContent>
         {isOffline && (
-          <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>{OFFLINE_MUTATION_MESSAGE}</Alert>
+          <Alert severity="info" sx={{ mt: 1, mb: 2 }}>Offline — this action will be queued and applied when you reconnect.</Alert>
         )}
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
           Merge {selectedCount} selected orders into a single order?
         </Typography>
+        <TextField
+          label="Supplier ID (optional)"
+          value={supplierID}
+          onChange={(e) => setSupplierID(e.target.value)}
+          fullWidth
+          size="small"
+          margin="dense"
+        />
+        <TextField
+          label="Warehouse Bin ID (optional)"
+          value={warehouseBinID}
+          onChange={(e) => setWarehouseBinID(e.target.value)}
+          fullWidth
+          size="small"
+          margin="dense"
+        />
+        <TextField
+          label="Pickup Point (optional)"
+          value={pickupPoint}
+          onChange={(e) => setPickupPoint(e.target.value)}
+          fullWidth
+          size="small"
+          margin="dense"
+        />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button onClick={handleClose} disabled={loading}>Cancel</Button>
         <Button
           variant="contained"
-          onClick={onConfirm}
-          disabled={loading || selectedCount < 2 || isOffline}
+          onClick={() => onConfirm(supplierID, warehouseBinID, pickupPoint)}
+          disabled={loading || selectedCount < 2}
           startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           Merge
@@ -129,14 +165,21 @@ export default function OrdersPage() {
     });
   }, [allSelectableOnPageSelected, selectableIDsOnPage]);
 
-  const handleMergeConfirm = async () => {
+  const handleMergeConfirm = async (supplierID: string, warehouseBinID: string, pickupPoint: string) => {
     if (selectedOrderIDs.length < 2) return;
     try {
-      const merged = await mergeMutation.mutateAsync({ order_ids: selectedOrderIDs });
-      notify.success('Orders merged successfully.');
+      const merged = await mergeMutation.mutateAsync({
+        order_ids: selectedOrderIDs,
+        supplier_id: supplierID || undefined,
+        warehouse_bin_id: warehouseBinID || undefined,
+        pickup_point: pickupPoint || undefined,
+      });
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Orders merged successfully.');
       setSelectedOrderIDs([]);
       setMergeOpen(false);
-      navigate(`/orders/${merged.id}`);
+      if (merged) navigate(`/orders/${merged.id}`);
     } catch {
       notify.error('Failed to merge selected orders. Ensure selected orders share the same member and item.');
     }
@@ -215,7 +258,7 @@ export default function OrdersPage() {
             variant="outlined"
             size="small"
             onClick={toggleSelectAllOnPage}
-            disabled={selectableIDsOnPage.length === 0 || isOffline}
+            disabled={selectableIDsOnPage.length === 0}
           >
             {allSelectableOnPageSelected ? 'Unselect Page' : 'Select Page'}
           </Button>
@@ -231,7 +274,7 @@ export default function OrdersPage() {
             variant="contained"
             size="small"
             onClick={() => setMergeOpen(true)}
-            disabled={selectedOrderIDs.length < 2 || isOffline}
+            disabled={selectedOrderIDs.length < 2}
           >
             Merge Selected ({selectedOrderIDs.length})
           </Button>

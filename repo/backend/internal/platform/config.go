@@ -24,6 +24,7 @@ type Config struct {
 	AllowInsecureHTTP            bool
 	BiometricModuleEnabled       bool
 	BiometricKeyRotationDays     int
+	BiometricMasterKeyRef        string
 	ClubTimezone                 string
 	LogLevel                     string
 }
@@ -48,6 +49,7 @@ func LoadConfig() Config {
 		AllowInsecureHTTP:            envOrDefaultBool("FC_ALLOW_INSECURE_HTTP", false),
 		BiometricModuleEnabled:       envOrDefaultBool("FC_BIOMETRIC_MODULE_ENABLED", false),
 		BiometricKeyRotationDays:     envOrDefaultInt("FC_BIOMETRIC_KEY_ROTATION_DAYS", 90),
+		BiometricMasterKeyRef:        envOrDefault("FC_BIOMETRIC_MASTER_KEY_REF", ""),
 		ClubTimezone:                 envOrDefault("FC_CLUB_TIMEZONE", "UTC"),
 		LogLevel:                     envOrDefault("FC_LOG_LEVEL", "info"),
 	}

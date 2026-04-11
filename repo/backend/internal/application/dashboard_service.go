@@ -54,7 +54,7 @@ func (s *DashboardServiceImpl) GetKPIs(ctx context.Context, locationID *uuid.UUI
 		return nil, fmt.Errorf("dashboard.classFillRate: %w", err)
 	}
 
-	coachProductivity, err := s.coachProductivity(ctx, locationID, periodLabel)
+	coachProductivity, err := s.coachProductivity(ctx, locationID, coachID, periodLabel)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard.coachProductivity: %w", err)
 	}
@@ -149,28 +149,30 @@ func (s *DashboardServiceImpl) churn(ctx context.Context, locationID, coachID *u
 }
 
 func (s *DashboardServiceImpl) renewalRate(ctx context.Context, locationID, coachID *uuid.UUID, curStart, curEnd, prevStart, prevEnd time.Time, period string) (KPIValue, error) {
-	curActive, err := s.countMembersByStatus(ctx, locationID, coachID, "active")
+	curDue, err := s.countMembersDueForRenewal(ctx, locationID, coachID, &curStart, &curEnd)
 	if err != nil {
 		return KPIValue{}, err
 	}
-	curTotal, err := s.countMembers(ctx, locationID, coachID, nil, nil)
+	curRenewed, err := s.countMembersRenewed(ctx, locationID, coachID, &curStart, &curEnd)
 	if err != nil {
 		return KPIValue{}, err
 	}
-
 	var curRate float64
-	if curTotal > 0 {
-		curRate = float64(curActive) / float64(curTotal) * 100
+	if curDue > 0 {
+		curRate = float64(curRenewed) / float64(curDue) * 100
 	}
 
-	// For previous period, approximate with churned vs total (no historical snapshot).
-	prevChurned, err := s.countChurnedMembers(ctx, locationID, coachID, &prevStart, &prevEnd)
+	prevDue, err := s.countMembersDueForRenewal(ctx, locationID, coachID, &prevStart, &prevEnd)
+	if err != nil {
+		return KPIValue{}, err
+	}
+	prevRenewed, err := s.countMembersRenewed(ctx, locationID, coachID, &prevStart, &prevEnd)
 	if err != nil {
 		return KPIValue{}, err
 	}
 	var prevRate float64
-	if curTotal > 0 {
-		prevRate = (1 - float64(prevChurned)/float64(max(curTotal, 1))) * 100
+	if prevDue > 0 {
+		prevRate = float64(prevRenewed) / float64(prevDue) * 100
 	}
 	return makeKPI(curRate, prevRate, period), nil
 }
@@ -198,39 +200,23 @@ func (s *DashboardServiceImpl) engagement(ctx context.Context, locationID, coach
 }
 
 func (s *DashboardServiceImpl) classFillRate(ctx context.Context, locationID, coachID *uuid.UUID, curStart, curEnd, prevStart, prevEnd time.Time, period string) (KPIValue, error) {
-	curSucceeded, err := s.countCampaignsByStatus(ctx, locationID, coachID, "succeeded", &curStart, &curEnd)
+	curRate, err := s.avgClassCapacityOccupancy(ctx, locationID, coachID, &curStart, &curEnd)
 	if err != nil {
 		return KPIValue{}, err
 	}
-	curTotal, err := s.countCampaignsByStatus(ctx, locationID, coachID, "", &curStart, &curEnd)
+	prevRate, err := s.avgClassCapacityOccupancy(ctx, locationID, coachID, &prevStart, &prevEnd)
 	if err != nil {
 		return KPIValue{}, err
-	}
-	prevSucceeded, err := s.countCampaignsByStatus(ctx, locationID, coachID, "succeeded", &prevStart, &prevEnd)
-	if err != nil {
-		return KPIValue{}, err
-	}
-	prevTotal, err := s.countCampaignsByStatus(ctx, locationID, coachID, "", &prevStart, &prevEnd)
-	if err != nil {
-		return KPIValue{}, err
-	}
-
-	var curRate, prevRate float64
-	if curTotal > 0 {
-		curRate = float64(curSucceeded) / float64(curTotal) * 100
-	}
-	if prevTotal > 0 {
-		prevRate = float64(prevSucceeded) / float64(prevTotal) * 100
 	}
 	return makeKPI(curRate, prevRate, period), nil
 }
 
-func (s *DashboardServiceImpl) coachProductivity(ctx context.Context, locationID *uuid.UUID, period string) (KPIValue, error) {
-	activeMembers, err := s.countMembersByStatus(ctx, locationID, nil, "active")
+func (s *DashboardServiceImpl) coachProductivity(ctx context.Context, locationID, coachID *uuid.UUID, period string) (KPIValue, error) {
+	activeMembers, err := s.countMembersByStatus(ctx, locationID, coachID, "active")
 	if err != nil {
 		return KPIValue{}, err
 	}
-	activeCoaches, err := s.countActiveCoaches(ctx, locationID)
+	activeCoaches, err := s.countActiveCoaches(ctx, locationID, coachID)
 	if err != nil {
 		return KPIValue{}, err
 	}
@@ -325,6 +311,66 @@ func (s *DashboardServiceImpl) countChurnedMembers(ctx context.Context, location
 	return count, nil
 }
 
+func (s *DashboardServiceImpl) countMembersDueForRenewal(ctx context.Context, locationID, coachID *uuid.UUID, start, end *time.Time) (int, error) {
+	q := `SELECT COUNT(*) FROM members WHERE 1=1`
+	args := []interface{}{}
+	n := 1
+	if locationID != nil {
+		q += fmt.Sprintf(" AND location_id = $%d", n)
+		args = append(args, *locationID)
+		n++
+	}
+	if coachID != nil {
+		q += fmt.Sprintf(" AND location_id = (SELECT location_id FROM coaches WHERE id = $%d)", n)
+		args = append(args, *coachID)
+		n++
+	}
+	if start != nil {
+		q += fmt.Sprintf(" AND renewal_date >= $%d", n)
+		args = append(args, *start)
+		n++
+	}
+	if end != nil {
+		q += fmt.Sprintf(" AND renewal_date < $%d", n)
+		args = append(args, *end)
+	}
+	var count int
+	if err := s.pool.QueryRow(ctx, q, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *DashboardServiceImpl) countMembersRenewed(ctx context.Context, locationID, coachID *uuid.UUID, start, end *time.Time) (int, error) {
+	q := `SELECT COUNT(*) FROM members WHERE membership_status = 'active'`
+	args := []interface{}{}
+	n := 1
+	if locationID != nil {
+		q += fmt.Sprintf(" AND location_id = $%d", n)
+		args = append(args, *locationID)
+		n++
+	}
+	if coachID != nil {
+		q += fmt.Sprintf(" AND location_id = (SELECT location_id FROM coaches WHERE id = $%d)", n)
+		args = append(args, *coachID)
+		n++
+	}
+	if start != nil {
+		q += fmt.Sprintf(" AND renewal_date >= $%d", n)
+		args = append(args, *start)
+		n++
+	}
+	if end != nil {
+		q += fmt.Sprintf(" AND renewal_date < $%d", n)
+		args = append(args, *end)
+	}
+	var count int
+	if err := s.pool.QueryRow(ctx, q, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (s *DashboardServiceImpl) countOrders(ctx context.Context, locationID, coachID *uuid.UUID, category string, start, end time.Time) (int, error) {
 	q := `SELECT COUNT(*) FROM orders o JOIN items i ON i.id = o.item_id WHERE o.created_at >= $1 AND o.created_at < $2`
 	args := []interface{}{start, end}
@@ -353,15 +399,21 @@ func (s *DashboardServiceImpl) countOrders(ctx context.Context, locationID, coac
 	return count, nil
 }
 
-func (s *DashboardServiceImpl) countCampaignsByStatus(ctx context.Context, locationID, coachID *uuid.UUID, status string, start, end *time.Time) (int, error) {
-	q := `SELECT COUNT(*) FROM group_buy_campaigns gbc JOIN items i ON i.id = gbc.item_id WHERE 1=1`
+// avgClassCapacityOccupancy returns the average capacity occupancy across campaigns in
+// the given period: AVG(current_committed_qty / max_quantity * 100) for campaigns where
+// max_quantity (class capacity) is set. Campaigns without a capacity are excluded from
+// the average. Returns 0 when no campaigns with capacity set exist in the period.
+func (s *DashboardServiceImpl) avgClassCapacityOccupancy(ctx context.Context, locationID, coachID *uuid.UUID, start, end *time.Time) (float64, error) {
+	q := `SELECT COALESCE(
+	          AVG(CASE WHEN gbc.max_quantity IS NOT NULL AND gbc.max_quantity > 0
+	              THEN gbc.current_committed_qty::float / gbc.max_quantity * 100
+	              ELSE NULL END),
+	          0)
+	      FROM group_buy_campaigns gbc
+	      JOIN items i ON i.id = gbc.item_id
+	      WHERE 1=1`
 	args := []interface{}{}
 	n := 1
-	if status != "" {
-		q += fmt.Sprintf(" AND gbc.status = $%d", n)
-		args = append(args, status)
-		n++
-	}
 	if locationID != nil {
 		q += fmt.Sprintf(" AND i.location_id = $%d", n)
 		args = append(args, *locationID)
@@ -381,19 +433,25 @@ func (s *DashboardServiceImpl) countCampaignsByStatus(ctx context.Context, locat
 		q += fmt.Sprintf(" AND gbc.created_at < $%d", n)
 		args = append(args, *end)
 	}
-	var count int
-	if err := s.pool.QueryRow(ctx, q, args...).Scan(&count); err != nil {
+	var rate float64
+	if err := s.pool.QueryRow(ctx, q, args...).Scan(&rate); err != nil {
 		return 0, err
 	}
-	return count, nil
+	return rate, nil
 }
 
-func (s *DashboardServiceImpl) countActiveCoaches(ctx context.Context, locationID *uuid.UUID) (int, error) {
+func (s *DashboardServiceImpl) countActiveCoaches(ctx context.Context, locationID *uuid.UUID, coachID *uuid.UUID) (int, error) {
 	q := `SELECT COUNT(*) FROM coaches WHERE is_active = true`
 	args := []interface{}{}
+	n := 1
 	if locationID != nil {
-		q += ` AND location_id = $1`
+		q += fmt.Sprintf(" AND location_id = $%d", n)
 		args = append(args, *locationID)
+		n++
+	}
+	if coachID != nil {
+		q += fmt.Sprintf(" AND id = $%d", n)
+		args = append(args, *coachID)
 	}
 	var count int
 	if err := s.pool.QueryRow(ctx, q, args...).Scan(&count); err != nil {

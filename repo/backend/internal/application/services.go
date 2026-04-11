@@ -69,8 +69,8 @@ type CampaignService interface {
 	Get(ctx context.Context, id uuid.UUID) (*domain.GroupBuyCampaign, error)
 	List(ctx context.Context, page, pageSize int) ([]domain.GroupBuyCampaign, int, error)
 	Join(ctx context.Context, campaignID, userID uuid.UUID, quantity int) (*domain.GroupBuyParticipant, error)
-	Cancel(ctx context.Context, id uuid.UUID) error
-	EvaluateAtCutoff(ctx context.Context, id uuid.UUID, now time.Time) error
+	Cancel(ctx context.Context, id uuid.UUID, performedBy uuid.UUID) error
+	EvaluateAtCutoff(ctx context.Context, id uuid.UUID, now time.Time, performedBy uuid.UUID) error
 	// ListPastCutoff returns active campaigns whose cutoff time has passed.
 	// Used by CutoffEvalJob to dispatch evaluation without direct repo access.
 	ListPastCutoff(ctx context.Context, now time.Time) ([]domain.GroupBuyCampaign, error)
@@ -123,8 +123,8 @@ type PurchaseOrderService interface {
 	List(ctx context.Context, page, pageSize int) ([]domain.PurchaseOrder, int, error)
 	Approve(ctx context.Context, id uuid.UUID, approvedBy uuid.UUID) error
 	Receive(ctx context.Context, id uuid.UUID, receivedLines []ReceivedLineInput, actorID uuid.UUID) error
-	Return(ctx context.Context, id uuid.UUID) error
-	Void(ctx context.Context, id uuid.UUID) error
+	Return(ctx context.Context, id uuid.UUID, performedBy uuid.UUID) error
+	Void(ctx context.Context, id uuid.UUID, performedBy uuid.UUID) error
 }
 
 // ReceivedLineInput represents the received data for a purchase order line.
@@ -199,6 +199,7 @@ type BackupService interface {
 	Trigger(ctx context.Context, performedBy *uuid.UUID) (*domain.BackupRun, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.BackupRun, error)
 	List(ctx context.Context, page, pageSize int) ([]domain.BackupRun, int, error)
+	VerifyIntegrity(ctx context.Context, id uuid.UUID) (*domain.BackupRun, error)
 }
 
 // RetentionService manages data retention policies and enforces the cleanup job

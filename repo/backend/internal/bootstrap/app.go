@@ -135,7 +135,7 @@ func NewApp(ctx context.Context, cfg platform.Config, logger *slog.Logger, dumpF
 	dashboardSvc := application.NewDashboardService(pool)
 	backupSvc := application.NewBackupService(backupStore, cfg, dumpFn, auditSvc)
 	retentionSvc := application.NewRetentionService(retentionStore, auditSvc, pool)
-	biometricSvc := application.NewBiometricService(biometricStore, encKeyStore, auditSvc, pool, cfg.BiometricKeyRotationDays)
+	biometricSvc := application.NewBiometricService(biometricStore, encKeyStore, auditSvc, pool, cfg.BiometricKeyRotationDays, cfg)
 	userSvc := application.NewUserService(userStore, auditSvc)
 	reportSvc := application.NewReportService(reportStore, exportStore, cfg, auditSvc, pool)
 

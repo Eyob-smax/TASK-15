@@ -222,6 +222,9 @@ type RetentionRepository interface {
 	GetByEntityType(ctx context.Context, entityType string) (*domain.RetentionPolicy, error)
 	List(ctx context.Context) ([]domain.RetentionPolicy, error)
 	Update(ctx context.Context, policy *domain.RetentionPolicy) error
+	// DeleteByIDs deletes records from the given table by ID slice.
+	// Uses executorFromContext so it participates in any ambient transaction.
+	DeleteByIDs(ctx context.Context, table string, ids []uuid.UUID) (int64, error)
 }
 
 // BiometricRepository manages persistence for biometric enrollments.

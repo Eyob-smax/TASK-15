@@ -159,12 +159,13 @@ func NewEncryptionKeyStore(pool *pgxpool.Pool) *EncryptionKeyStore {
 func (s *EncryptionKeyStore) Create(ctx context.Context, key *domain.EncryptionKey) error {
 	db := executorFromContext(ctx, s.pool)
 	const q = `
-		INSERT INTO encryption_keys (id, key_reference, purpose, status, activated_at, rotated_at, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+		INSERT INTO encryption_keys (id, key_reference, wrapped_dek, purpose, status, activated_at, rotated_at, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	_, err := db.Exec(ctx, q,
 		key.ID,
 		key.KeyReference,
+		key.WrappedDEK,
 		key.Purpose,
 		key.Status,
 		key.ActivatedAt,
@@ -183,7 +184,7 @@ func (s *EncryptionKeyStore) Create(ctx context.Context, key *domain.EncryptionK
 func (s *EncryptionKeyStore) GetActive(ctx context.Context, purpose string) (*domain.EncryptionKey, error) {
 	db := executorFromContext(ctx, s.pool)
 	const q = `
-		SELECT id, key_reference, purpose, status, activated_at, rotated_at, expires_at
+		SELECT id, key_reference, wrapped_dek, purpose, status, activated_at, rotated_at, expires_at
 		FROM encryption_keys
 		WHERE purpose = $1 AND status = 'active'
 		ORDER BY activated_at DESC
@@ -205,7 +206,7 @@ func (s *EncryptionKeyStore) GetActive(ctx context.Context, purpose string) (*do
 func (s *EncryptionKeyStore) List(ctx context.Context, purpose string) ([]domain.EncryptionKey, error) {
 	db := executorFromContext(ctx, s.pool)
 	const q = `
-		SELECT id, key_reference, purpose, status, activated_at, rotated_at, expires_at
+		SELECT id, key_reference, wrapped_dek, purpose, status, activated_at, rotated_at, expires_at
 		FROM encryption_keys
 		WHERE purpose = $1
 		ORDER BY activated_at DESC`
@@ -252,12 +253,14 @@ func (s *EncryptionKeyStore) Update(ctx context.Context, key *domain.EncryptionK
 // scanEncryptionKey reads a single encryption_keys row into a domain struct.
 // The status column is scanned as a plain string and cast to domain.EncryptionKeyStatus.
 // created_at is present in the DB but absent from the domain struct, so it is not scanned.
+// wrapped_dek is nullable (legacy rows pre-migration have NULL); scanned into []byte (nil when NULL).
 func scanEncryptionKey(row pgx.Row) (*domain.EncryptionKey, error) {
 	var k domain.EncryptionKey
 	var statusStr string
 	err := row.Scan(
 		&k.ID,
 		&k.KeyReference,
+		&k.WrappedDEK,
 		&k.Purpose,
 		&statusStr,
 		&k.ActivatedAt,

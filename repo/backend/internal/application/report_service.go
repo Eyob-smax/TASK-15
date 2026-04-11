@@ -138,15 +138,17 @@ func (s *ReportServiceImpl) queryReportData(ctx context.Context, reportType stri
 		return s.queryRows(ctx, q, args...)
 	case "engagement":
 		q, args := buildFilteredQuery(
-			`SELECT id::text, status, quantity, total_amount, created_at FROM orders`,
-			filters, map[string]string{"status": "status", "_date": "created_at"},
-			" ORDER BY created_at DESC LIMIT 500")
+			`SELECT o.id::text, o.status, o.quantity, o.total_amount, o.created_at
+			 FROM orders o JOIN items i ON i.id = o.item_id`,
+			filters, map[string]string{"location_id": "i.location_id", "status": "o.status", "_date": "o.created_at"},
+			" ORDER BY o.created_at DESC LIMIT 500")
 		return s.queryRows(ctx, q, args...)
 	case "class_fill_rate":
 		q, args := buildFilteredQuery(
-			`SELECT id::text, status, min_quantity, current_committed_qty, cutoff_time FROM group_buy_campaigns`,
-			filters, map[string]string{"status": "status", "_date": "cutoff_time"},
-			" ORDER BY cutoff_time DESC LIMIT 500")
+			`SELECT gbc.id::text, gbc.status, gbc.min_quantity, gbc.current_committed_qty, gbc.cutoff_time
+			 FROM group_buy_campaigns gbc JOIN items i ON i.id = gbc.item_id`,
+			filters, map[string]string{"location_id": "i.location_id", "status": "gbc.status", "_date": "gbc.cutoff_time"},
+			" ORDER BY gbc.cutoff_time DESC LIMIT 500")
 		return s.queryRows(ctx, q, args...)
 	case "coach_productivity":
 		q, args := buildFilteredQuery(
@@ -356,8 +358,8 @@ func sanitizeReportFilters(reportType string, filters map[string]string) map[str
 		"member_growth":      {"location_id": true, "status": true, "from": true, "to": true},
 		"churn":              {"location_id": true, "from": true, "to": true},
 		"renewal_rate":       {"location_id": true},
-		"engagement":         {"status": true, "from": true, "to": true},
-		"class_fill_rate":    {"status": true, "from": true, "to": true},
+		"engagement":         {"location_id": true, "status": true, "from": true, "to": true},
+		"class_fill_rate":    {"location_id": true, "status": true, "from": true, "to": true},
 		"coach_productivity": {"location_id": true, "coach_id": true},
 		"inventory_summary":  {"category": true, "status": true},
 		"procurement_summary": {"status": true, "from": true, "to": true},

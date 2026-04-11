@@ -78,6 +78,15 @@ func (h *ReportHandler) GetReportData(c echo.Context) error {
 		}
 	}
 
+	// Coaches are scoped to their assigned location. A coach with no assigned
+	// location cannot be safely scoped, so deny access entirely.
+	if user.Role == domain.UserRoleCoach {
+		if user.LocationID == nil {
+			return c.JSON(http.StatusForbidden, NewErrorResponse("FORBIDDEN", "coach account has no assigned location"))
+		}
+		filters["location_id"] = user.LocationID.String()
+	}
+
 	// Service enforces role check as a second layer.
 	result, err := h.svc.GetData(c.Request().Context(), id, filters, user.Role)
 	if err != nil {
@@ -105,6 +114,17 @@ func (h *ReportHandler) RunExport(c echo.Context) error {
 	reportID, err := uuid.Parse(req.ReportID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, NewErrorResponse("BAD_REQUEST", "invalid report_id"))
+	}
+
+	// Coaches are scoped to their assigned location — same enforcement as GetReportData.
+	if user.Role == domain.UserRoleCoach {
+		if user.LocationID == nil {
+			return c.JSON(http.StatusForbidden, NewErrorResponse("FORBIDDEN", "coach account has no assigned location"))
+		}
+		if req.Parameters == nil {
+			req.Parameters = make(map[string]string)
+		}
+		req.Parameters["location_id"] = user.LocationID.String()
 	}
 
 	job, err := h.svc.GenerateExport(c.Request().Context(), reportID, domain.ExportFormat(req.Format), req.Parameters, user.ID, user.Role)

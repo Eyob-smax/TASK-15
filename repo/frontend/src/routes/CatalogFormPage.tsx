@@ -59,6 +59,7 @@ export default function CatalogFormPage() {
   } = useForm<CreateItemFormData>({
     resolver: zodResolver(createItemSchema),
     defaultValues: getDefaultCatalogFormValues(),
+    mode: "onBlur",
   });
 
   const availabilityWindows = useFieldArray({

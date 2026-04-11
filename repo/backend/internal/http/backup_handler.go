@@ -3,6 +3,7 @@ package http
 import (
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"fitcommerce/internal/application"
@@ -54,6 +55,25 @@ func (h *BackupHandler) ListBackups(c echo.Context) error {
 		Data:       resp,
 		Pagination: paginationMeta(page, pageSize, total),
 	})
+}
+
+// VerifyBackup handles GET /admin/backups/:id/verify.
+func (h *BackupHandler) VerifyBackup(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, NewErrorResponse("INVALID_ID", "invalid backup ID"))
+	}
+
+	run, err := h.svc.VerifyIntegrity(c.Request().Context(), id)
+	if err != nil {
+		return HandleDomainError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, dto.SuccessResponse{Data: map[string]interface{}{
+		"valid":     true,
+		"backup_id": run.ID.String(),
+		"checksum":  run.Checksum,
+	}})
 }
 
 // --- Private helpers ---

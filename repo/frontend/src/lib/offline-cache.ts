@@ -14,6 +14,7 @@ const QUERY_CACHE_VERSION = 1;
 const MUTATION_QUEUE_KEY = "offline-mutations";
 const MUTATION_QUEUE_VERSION = 1;
 const ITEM_ID_MAP_KEY = "offline-item-id-map";
+const ITEM_ID_MAP_VERSION = 1;
 
 const OFFLINE_QUERY_ROOTS = new Set([
   "dashboard",
@@ -46,7 +47,27 @@ interface PersistedQuerySnapshot {
   state: DehydratedState;
 }
 
-export type OfflineMutationType = "create-item" | "update-item" | "run-export";
+export type OfflineMutationType =
+  | "create-item"
+  | "update-item"
+  | "run-export"
+  | "cancel-order"
+  | "pay-order"
+  | "refund-order"
+  | "add-order-note"
+  | "split-order"
+  | "merge-order"
+  | "join-campaign"
+  | "cancel-campaign"
+  | "evaluate-campaign"
+  | "create-campaign"
+  | "create-po"
+  | "approve-po"
+  | "receive-po"
+  | "void-po"
+  | "return-po"
+  | "create-adjustment"
+  | "resolve-variance";
 export type OfflineMutationStatus = "pending" | "failed";
 
 export interface OfflineMutationEntry {
@@ -167,19 +188,37 @@ export async function persistOfflineQueryCache(
   return snapshot.updatedAt;
 }
 
-export async function loadPendingOfflineMutations(): Promise<
-  OfflineMutationEntry[]
-> {
+// loadAllOfflineMutations loads the full queue regardless of status. Used
+// internally by write operations that must see both pending and failed entries.
+async function loadAllOfflineMutations(): Promise<OfflineMutationEntry[]> {
   if (typeof window === "undefined" || !("indexedDB" in window)) {
     return [];
   }
-
   const persisted =
     await readStoreValue<PersistedMutationQueue>(MUTATION_QUEUE_KEY);
   if (!persisted || persisted.version !== MUTATION_QUEUE_VERSION) {
     return [];
   }
   return persisted.mutations;
+}
+
+// loadPendingOfflineMutations returns only entries that have not yet been
+// permanently failed. Entries with no status are treated as "pending" for
+// backwards compatibility with any data written before the status field was
+// introduced.
+export async function loadPendingOfflineMutations(): Promise<
+  OfflineMutationEntry[]
+> {
+  const all = await loadAllOfflineMutations();
+  return all.filter((e) => !e.status || e.status === "pending");
+}
+
+// loadFailedOfflineMutations returns only entries marked as terminal failures.
+export async function loadFailedOfflineMutations(): Promise<
+  OfflineMutationEntry[]
+> {
+  const all = await loadAllOfflineMutations();
+  return all.filter((e) => e.status === "failed");
 }
 
 export async function enqueueOfflineMutation(
@@ -189,7 +228,7 @@ export async function enqueueOfflineMutation(
     return;
   }
 
-  const existing = await loadPendingOfflineMutations();
+  const existing = await loadAllOfflineMutations();
   const queue: PersistedMutationQueue = {
     version: MUTATION_QUEUE_VERSION,
     updatedAt: Date.now(),
@@ -198,6 +237,9 @@ export async function enqueueOfflineMutation(
   await writeStoreValue(MUTATION_QUEUE_KEY, queue);
 }
 
+// markOfflineMutationFailed marks a queued entry as permanently failed with an
+// error message. The entry is retained in the queue so operators can review and
+// explicitly dismiss it via clearFailedOfflineMutations.
 export async function markOfflineMutationFailed(
   id: string,
   message: string,
@@ -206,22 +248,36 @@ export async function markOfflineMutationFailed(
     return;
   }
 
-  const existing = await loadPendingOfflineMutations();
+  const existing = await loadAllOfflineMutations();
   const now = Date.now();
   const queue: PersistedMutationQueue = {
     version: MUTATION_QUEUE_VERSION,
     updatedAt: now,
     mutations: existing.map((entry) => {
-      if (entry.id !== id) {
-        return entry;
-      }
+      if (entry.id !== id) return entry;
       return {
         ...entry,
-        status: "failed",
+        status: "failed" as const,
         updatedAt: now,
         lastError: message,
       };
     }),
+  };
+  await writeStoreValue(MUTATION_QUEUE_KEY, queue);
+}
+
+// clearFailedOfflineMutations removes all failed entries. Call this only after
+// the operator has explicitly acknowledged and dismissed the failures.
+export async function clearFailedOfflineMutations(): Promise<void> {
+  if (typeof window === "undefined" || !("indexedDB" in window)) {
+    return;
+  }
+
+  const existing = await loadAllOfflineMutations();
+  const queue: PersistedMutationQueue = {
+    version: MUTATION_QUEUE_VERSION,
+    updatedAt: Date.now(),
+    mutations: existing.filter((e) => e.status !== "failed"),
   };
   await writeStoreValue(MUTATION_QUEUE_KEY, queue);
 }
@@ -231,7 +287,7 @@ export async function removeOfflineMutation(id: string): Promise<void> {
     return;
   }
 
-  const existing = await loadPendingOfflineMutations();
+  const existing = await loadAllOfflineMutations();
   const queue: PersistedMutationQueue = {
     version: MUTATION_QUEUE_VERSION,
     updatedAt: Date.now(),
@@ -240,6 +296,9 @@ export async function removeOfflineMutation(id: string): Promise<void> {
   await writeStoreValue(MUTATION_QUEUE_KEY, queue);
 }
 
+// setOfflineItemIDMapping persists a temporary client-side item ID to its
+// server-assigned ID so navigation and cache updates can use the real ID after
+// a successful create-item replay.
 export async function setOfflineItemIDMapping(
   temporaryID: string,
   serverID: string,
@@ -249,24 +308,26 @@ export async function setOfflineItemIDMapping(
   }
 
   const existing = await readStoreValue<PersistedItemIDMap>(ITEM_ID_MAP_KEY);
-  const queue: PersistedItemIDMap = {
-    version: 1,
+  const updated: PersistedItemIDMap = {
+    version: ITEM_ID_MAP_VERSION,
     updatedAt: Date.now(),
     mappings: {
       ...(existing?.mappings ?? {}),
       [temporaryID]: serverID,
     },
   };
-  await writeStoreValue(ITEM_ID_MAP_KEY, queue);
+  await writeStoreValue(ITEM_ID_MAP_KEY, updated);
 }
 
+// resolveOfflineItemID returns the server-assigned ID for a given client-side
+// temporary ID, or the original ID if no mapping exists.
 export async function resolveOfflineItemID(id: string): Promise<string> {
   if (typeof window === "undefined" || !("indexedDB" in window)) {
     return id;
   }
 
   const existing = await readStoreValue<PersistedItemIDMap>(ITEM_ID_MAP_KEY);
-  if (!existing || existing.version !== 1) {
+  if (!existing || existing.version !== ITEM_ID_MAP_VERSION) {
     return id;
   }
   return existing.mappings[id] ?? id;

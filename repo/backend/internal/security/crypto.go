@@ -73,6 +73,18 @@ func DecryptAESGCM(ciphertext, key []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// WrapDEK encrypts the given Data Encryption Key (dek) using a Key Encryption
+// Key (kek) via AES-256-GCM. The result can be stored at rest; only holders of
+// kek can recover dek via UnwrapDEK.
+func WrapDEK(dek, kek []byte) ([]byte, error) {
+	return EncryptAESGCM(dek, kek)
+}
+
+// UnwrapDEK decrypts a wrapped DEK previously produced by WrapDEK.
+func UnwrapDEK(wrappedDEK, kek []byte) ([]byte, error) {
+	return DecryptAESGCM(wrappedDEK, kek)
+}
+
 // DeriveKeyFromRef derives a 32-byte AES-256 key from the given key reference
 // string using HKDF-SHA256. IKM = []byte(keyRef), salt = nil,
 // info = "fitcommerce-biometric-v1". The derived key is deterministic for a

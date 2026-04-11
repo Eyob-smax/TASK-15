@@ -212,6 +212,7 @@ func registerAdminRoutes(g *echo.Group, authMW echo.MiddlewareFunc, backupH *Bac
 	// Backups
 	g.POST("/backups", backupH.TriggerBackup, manageBackups)
 	g.GET("/backups", backupH.ListBackups, manageBackups)
+	g.GET("/backups/:id/verify", backupH.VerifyBackup, manageBackups)
 
 	// Biometrics — static routes registered before param routes to ensure correct matching
 	g.POST("/biometrics/rotate-key", biometricH.RotateKey, manageBiometric)

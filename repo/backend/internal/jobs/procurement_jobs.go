@@ -10,36 +10,60 @@ import (
 	"fitcommerce/internal/domain"
 )
 
-// BackupJob runs database backups on a 24-hour interval.
+// BackupJob runs database backups on a nightly schedule (clock-based) in production,
+// or on a fixed interval when constructed via NewBackupJobWithInterval (tests only).
 type BackupJob struct {
-	svc      application.BackupService
-	logger   *slog.Logger
-	interval time.Duration
+	svc       application.BackupService
+	logger    *slog.Logger
+	interval  time.Duration
+	scheduled bool // true = clock-based midnight; false = fixed-interval ticker
 }
 
 func NewBackupJob(svc application.BackupService, logger *slog.Logger) *BackupJob {
-	return &BackupJob{svc: svc, logger: logger, interval: 24 * time.Hour}
+	return &BackupJob{svc: svc, logger: logger, scheduled: true}
 }
 
 func NewBackupJobWithInterval(svc application.BackupService, logger *slog.Logger, interval time.Duration) *BackupJob {
-	return &BackupJob{svc: svc, logger: logger, interval: interval}
+	return &BackupJob{svc: svc, logger: logger, interval: interval, scheduled: false}
+}
+
+func (j *BackupJob) runOnce(ctx context.Context) {
+	run, err := j.svc.Trigger(ctx, nil) // nil = system actor
+	if err != nil {
+		j.logger.Error("backup job error", "error", err)
+		return
+	}
+	j.logger.Info("backup completed", "run_id", run.ID, "status", string(run.Status))
 }
 
 func (j *BackupJob) Run(ctx context.Context) {
-	ticker := time.NewTicker(j.interval)
-	defer ticker.Stop()
+	if !j.scheduled {
+		// Fixed-interval path — used by tests via NewBackupJobWithInterval.
+		ticker := time.NewTicker(j.interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				j.runOnce(ctx)
+			}
+		}
+	}
+
+	// Clock-based path: sleep until next UTC midnight, then repeat every 24 h.
+	// time.Date normalises month/year overflow automatically.
 	for {
+		now := time.Now().UTC()
+		nextMidnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+		timer := time.NewTimer(time.Until(nextMidnight))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
-			run, err := j.svc.Trigger(ctx, nil) // nil = system actor
-			if err != nil {
-				j.logger.Error("backup job error", "error", err)
-				continue
-			}
-			j.logger.Info("backup completed", "run_id", run.ID, "status", string(run.Status))
+		case <-timer.C:
 		}
+		j.runOnce(ctx)
 	}
 }
 

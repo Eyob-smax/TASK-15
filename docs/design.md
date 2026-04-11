@@ -4,7 +4,7 @@
 
 FitCommerce is an **offline-first, local-network** web application designed for fitness club operations. It runs entirely on-premises with no internet dependency. All three services (frontend, backend, database) are deployed via Docker Compose on a single host or LAN segment.
 
-- **Frontend** -- React SPA served over HTTP. Members and staff access it via a browser pointed at the host's LAN IP or `localhost`.
+- **Frontend** -- React SPA served over HTTPS (port 3443). HTTP requests to port 3000 are redirected to HTTPS. Members and staff access it via a browser pointed at the host's LAN IP or `localhost`.
 - **Backend** -- Go API server. The single backend process handles all HTTP requests, runs background jobs, and manages the backup subsystem.
 - **Database** -- PostgreSQL 15+. System of record for all persistent state.
 

@@ -18,7 +18,7 @@ import { OfflineDataNotice } from '@/components/OfflineDataNotice';
 import { PageContainer } from '@/components/PageContainer';
 import { DataTable, type Column } from '@/components/DataTable';
 import { RequireRole } from '@/lib/auth';
-import { OFFLINE_MUTATION_MESSAGE, useOfflineStatus } from '@/lib/offline';
+import { useOfflineStatus } from '@/lib/offline';
 import {
   useInventorySnapshots,
   useInventoryAdjustments,
@@ -79,7 +79,9 @@ function CreateAdjustmentDialog({ open, onClose, isOffline }: { open: boolean; o
   const onSubmit = async (data: InventoryAdjustmentFormData) => {
     try {
       await createMutation.mutateAsync(data);
-      notify.success('Adjustment created.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Adjustment created.');
       reset();
       onClose();
     } catch {
@@ -95,7 +97,7 @@ function CreateAdjustmentDialog({ open, onClose, isOffline }: { open: boolean; o
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isOffline && (
-            <Alert severity="warning">{OFFLINE_MUTATION_MESSAGE}</Alert>
+            <Alert severity="info">Offline — this action will be queued and applied when you reconnect.</Alert>
           )}
           <TextField
             {...register('item_id')}
@@ -132,7 +134,7 @@ function CreateAdjustmentDialog({ open, onClose, isOffline }: { open: boolean; o
           <Button
             type="submit"
             variant="contained"
-            disabled={isSubmitting || isOffline}
+            disabled={isSubmitting}
             startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             Create
@@ -170,7 +172,6 @@ export default function InventoryPage() {
             size="small"
             startIcon={<AddIcon />}
             onClick={() => setAdjustOpen(true)}
-            disabled={isOffline}
           >
             Create Adjustment
           </Button>

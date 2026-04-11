@@ -111,6 +111,19 @@ func (s *RetentionStore) Update(ctx context.Context, policy *domain.RetentionPol
 	return nil
 }
 
+// DeleteByIDs deletes records from the given table whose id column matches any
+// value in ids. It uses executorFromContext so it participates in any ambient
+// transaction set by postgres.WithTransaction.
+func (s *RetentionStore) DeleteByIDs(ctx context.Context, table string, ids []uuid.UUID) (int64, error) {
+	db := executorFromContext(ctx, s.pool)
+	q := fmt.Sprintf("DELETE FROM %s WHERE id = ANY($1)", table)
+	tag, err := db.Exec(ctx, q, ids)
+	if err != nil {
+		return 0, fmt.Errorf("retention_store.DeleteByIDs(%s): %w", table, err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // scanRetentionPolicy reads a single retention_policies row into a domain struct.
 func scanRetentionPolicy(row pgx.Row) (*domain.RetentionPolicy, error) {
 	var p domain.RetentionPolicy

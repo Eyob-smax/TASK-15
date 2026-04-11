@@ -141,27 +141,30 @@ func (s *RetentionServiceImpl) RunCleanup(ctx context.Context) error {
 			continue
 		}
 
-		for _, recordID := range recordIDs {
-			_ = s.audit.Log(ctx, "retention.record_deleted", target.table, recordID, domain.SystemActorID, map[string]interface{}{
-				"entity_type": policy.EntityType,
-				"cutoff":      cutoff.Format(time.RFC3339),
+		if err := withOptionalTransaction(ctx, s.pool, func(txCtx context.Context) error {
+			for _, recordID := range recordIDs {
+				if err := s.audit.Log(txCtx, "retention.record_deleted", target.table, recordID, domain.SystemActorID, map[string]interface{}{
+					"entity_type": policy.EntityType,
+					"cutoff":      cutoff.Format(time.RFC3339),
+				}); err != nil {
+					return err
+				}
+			}
+			rowsDeleted, err := s.retentionRepo.DeleteByIDs(txCtx, target.table, recordIDs)
+			if err != nil {
+				return err
+			}
+			return s.audit.Log(txCtx, "retention.purged", "retention_policy", policy.ID, domain.SystemActorID, map[string]interface{}{
+				"entity_type":  policy.EntityType,
+				"cutoff":       cutoff.Format(time.RFC3339),
+				"rows_deleted": rowsDeleted,
+				"record_ids":   recordIDs,
 			})
-		}
-
-		deleteQ := fmt.Sprintf("DELETE FROM %s WHERE id = ANY($1)", target.table)
-		tag, err := s.pool.Exec(ctx, deleteQ, recordIDs)
-		if err != nil {
-			slog.Default().Error("retention_service.RunCleanup: purge failed",
+		}); err != nil {
+			slog.Default().Error("retention_service.RunCleanup: transactional purge failed",
 				"entity_type", policy.EntityType, "error", err)
 			continue
 		}
-
-		_ = s.audit.Log(ctx, "retention.purged", "retention_policy", policy.ID, domain.SystemActorID, map[string]interface{}{
-			"entity_type":  policy.EntityType,
-			"cutoff":       cutoff.Format(time.RFC3339),
-			"rows_deleted": tag.RowsAffected(),
-			"record_ids":   recordIDs,
-		})
 	}
 	return nil
 }

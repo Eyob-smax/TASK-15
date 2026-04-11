@@ -80,6 +80,7 @@ type CampaignResponse struct {
 	ID                  string  `json:"id"`
 	ItemID              string  `json:"item_id"`
 	MinQuantity         int     `json:"min_quantity"`
+	MaxQuantity         *int    `json:"max_quantity,omitempty"`
 	CurrentCommittedQty int     `json:"current_committed_qty"`
 	CutoffTime          string  `json:"cutoff_time"`
 	Status              string  `json:"status"`

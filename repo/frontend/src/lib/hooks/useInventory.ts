@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type PaginatedResponse } from '@/lib/api-client';
+import { enqueueOfflineMutation } from '@/lib/offline-cache';
 import type { InventorySnapshot, InventoryAdjustment, WarehouseBin } from '@/lib/types';
 
 interface SnapshotParams {
@@ -45,8 +46,18 @@ interface CreateAdjustmentPayload {
 export function useCreateAdjustment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CreateAdjustmentPayload) =>
-      apiClient.post<{ data: InventoryAdjustment }>('/inventory/adjustments', payload),
+    mutationFn: async (payload: CreateAdjustmentPayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-create-adjustment`,
+          type: 'create-adjustment',
+          payload: payload as unknown as Record<string, unknown>,
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<{ data: InventoryAdjustment }>('/inventory/adjustments', payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['inventory'] });
     },

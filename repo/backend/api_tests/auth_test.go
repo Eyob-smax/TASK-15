@@ -1,6 +1,7 @@
 package api_tests
 
 import (
+	"context"
 	"net/http"
 	"testing"
 )
@@ -58,5 +59,53 @@ func TestAuth_SessionEndpointRequiresAuthentication(t *testing.T) {
 	errBody := decodeError(t, rec)
 	if errBody.Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("expected UNAUTHORIZED, got %s", errBody.Error.Code)
+	}
+}
+
+func TestAuth_IdleSessionExpiry(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	cookies := app.login(t, admin)
+
+	// Verify session is valid before expiry manipulation.
+	requireStatus(t, app.get(t, "/api/v1/auth/session", cookies), http.StatusOK)
+
+	// Force the session's idle expiry to the past.
+	_, err := app.app.Pool.Exec(context.Background(),
+		`UPDATE sessions SET idle_expires_at = NOW() - INTERVAL '1 second' WHERE user_id = $1`,
+		admin.ID,
+	)
+	if err != nil {
+		t.Fatalf("force idle expiry: %v", err)
+	}
+
+	rec := app.get(t, "/api/v1/auth/session", cookies)
+	requireStatus(t, rec, http.StatusUnauthorized)
+	if decodeError(t, rec).Error.Code != "UNAUTHORIZED" {
+		t.Fatal("expected UNAUTHORIZED after idle expiry")
+	}
+}
+
+func TestAuth_AbsoluteSessionExpiry(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	cookies := app.login(t, admin)
+
+	// Verify session is valid before expiry manipulation.
+	requireStatus(t, app.get(t, "/api/v1/auth/session", cookies), http.StatusOK)
+
+	// Force the session's absolute expiry to the past.
+	_, err := app.app.Pool.Exec(context.Background(),
+		`UPDATE sessions SET absolute_expires_at = NOW() - INTERVAL '1 second' WHERE user_id = $1`,
+		admin.ID,
+	)
+	if err != nil {
+		t.Fatalf("force absolute expiry: %v", err)
+	}
+
+	rec := app.get(t, "/api/v1/auth/session", cookies)
+	requireStatus(t, rec, http.StatusUnauthorized)
+	if decodeError(t, rec).Error.Code != "UNAUTHORIZED" {
+		t.Fatal("expected UNAUTHORIZED after absolute expiry")
 	}
 }

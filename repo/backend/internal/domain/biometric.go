@@ -21,11 +21,15 @@ type BiometricEnrollment struct {
 type EncryptionKey struct {
 	ID           uuid.UUID
 	KeyReference string
-	Purpose      string // "biometric"
-	Status       EncryptionKeyStatus
-	ActivatedAt  time.Time
-	RotatedAt    *time.Time
-	ExpiresAt    time.Time
+	// WrappedDEK is the envelope-encrypted Data Encryption Key. It is produced
+	// by WrapDEK(randomDEK, kek) where kek is derived from the master key ref
+	// in platform.Config. Nil for legacy keys — callers should force rotation.
+	WrappedDEK []byte
+	Purpose    string // "biometric"
+	Status     EncryptionKeyStatus
+	ActivatedAt time.Time
+	RotatedAt   *time.Time
+	ExpiresAt   time.Time
 }
 
 // NeedsRotation returns true if the number of days since the key was activated

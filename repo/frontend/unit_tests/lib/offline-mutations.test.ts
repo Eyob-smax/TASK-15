@@ -124,6 +124,79 @@ describe("replayOfflineMutations", () => {
     expect(mockPut).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      "refund-order",
+      { id: "o1" },
+      "/orders/o1/refund",
+      {},
+    ],
+    [
+      "add-order-note",
+      { id: "o1", note: "hello" },
+      "/orders/o1/notes",
+      { note: "hello" },
+    ],
+    [
+      "split-order",
+      { id: "o1", quantities: [1, 2] },
+      "/orders/o1/split",
+      { quantities: [1, 2] },
+    ],
+    [
+      "merge-order",
+      { order_ids: ["o1", "o2"] },
+      "/orders/merge",
+      { order_ids: ["o1", "o2"] },
+    ],
+    [
+      "evaluate-campaign",
+      { id: "c1" },
+      "/campaigns/c1/evaluate",
+      {},
+    ],
+    [
+      "create-campaign",
+      { item_id: "i1", min_quantity: 5, cutoff_time: "2026-06-01T00:00:00Z" },
+      "/campaigns",
+      { item_id: "i1", min_quantity: 5, cutoff_time: "2026-06-01T00:00:00Z" },
+    ],
+    [
+      "create-adjustment",
+      { item_id: "i1", quantity_change: -2, reason: "damaged" },
+      "/inventory/adjustments",
+      { item_id: "i1", quantity_change: -2, reason: "damaged" },
+    ],
+    [
+      "return-po",
+      { id: "po1" },
+      "/purchase-orders/po1/return",
+      {},
+    ],
+    [
+      "resolve-variance",
+      { id: "v1", action: "adjustment", resolution_notes: "ok", quantity_change: 1 },
+      "/variances/v1/resolve",
+      { action: "adjustment", resolution_notes: "ok", quantity_change: 1 },
+    ],
+  ])(
+    "replays %s mutation with correct path and body",
+    async (type, payload, expectedPath, expectedBody) => {
+      mockLoadPending.mockResolvedValue([
+        { id: "q1", type, payload, createdAt: 1, status: "pending" },
+      ]);
+      mockPost.mockResolvedValue({});
+
+      const queryClient = new QueryClient();
+      const count = await replayOfflineMutations(queryClient);
+
+      expect(count).toBe(1);
+      expect(mockPost).toHaveBeenCalledWith(expectedPath, expectedBody);
+      expect(mockRemove).toHaveBeenCalledWith("q1");
+      expect(mockMarkFailed).not.toHaveBeenCalled();
+    },
+  );
+
   it("skips entries already marked as failed", async () => {
     mockLoadPending.mockResolvedValue([
       {

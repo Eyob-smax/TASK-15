@@ -72,6 +72,7 @@ type BatchEditRow struct {
 type CreateCampaignRequest struct {
 	ItemID      string    `json:"item_id" validate:"required"`
 	MinQuantity int       `json:"min_quantity" validate:"required,gt=0"`
+	MaxQuantity *int      `json:"max_quantity,omitempty"`
 	CutoffTime  time.Time `json:"cutoff_time" validate:"required"`
 }
 

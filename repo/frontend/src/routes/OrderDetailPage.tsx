@@ -22,7 +22,7 @@ import { PageContainer } from "@/components/PageContainer";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { StatusChip } from "@/components/StatusChip";
 import { RequireRole, useAuth } from "@/lib/auth";
-import { OFFLINE_MUTATION_MESSAGE, useOfflineStatus } from "@/lib/offline";
+import { useOfflineStatus } from "@/lib/offline";
 import {
   useOrder,
   useOrderTimeline,
@@ -71,7 +71,9 @@ function AddNoteDialog({
     if (!note.trim()) return;
     try {
       await addNoteMutation.mutateAsync({ id: orderId, note });
-      notify.success("Note added.");
+      isOffline
+        ? notify.info("Action queued — will sync when you reconnect.")
+        : notify.success("Note added.");
       setNote("");
       onClose();
     } catch {
@@ -84,8 +86,8 @@ function AddNoteDialog({
       <DialogTitle>Add Note</DialogTitle>
       <DialogContent>
         {isOffline && (
-          <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>
-            {OFFLINE_MUTATION_MESSAGE}
+          <Alert severity="info" sx={{ mt: 1, mb: 2 }}>
+            Offline — this action will be queued and applied when you reconnect.
           </Alert>
         )}
         <TextField
@@ -106,7 +108,7 @@ function AddNoteDialog({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={addNoteMutation.isPending || !note.trim() || isOffline}
+          disabled={addNoteMutation.isPending || !note.trim()}
           startIcon={
             addNoteMutation.isPending ? (
               <CircularProgress size={16} color="inherit" />
@@ -139,7 +141,9 @@ function PayDialog({
     if (!marker.trim()) return;
     try {
       await payMutation.mutateAsync({ id: orderId, settlementMarker: marker });
-      notify.success("Order marked as paid.");
+      isOffline
+        ? notify.info("Action queued — will sync when you reconnect.")
+        : notify.success("Order marked as paid.");
       setMarker("");
       onClose();
     } catch {
@@ -152,8 +156,8 @@ function PayDialog({
       <DialogTitle>Record Payment</DialogTitle>
       <DialogContent>
         {isOffline && (
-          <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>
-            {OFFLINE_MUTATION_MESSAGE}
+          <Alert severity="info" sx={{ mt: 1, mb: 2 }}>
+            Offline — this action will be queued and applied when you reconnect.
           </Alert>
         )}
         <TextField
@@ -173,7 +177,7 @@ function PayDialog({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={payMutation.isPending || !marker.trim() || isOffline}
+          disabled={payMutation.isPending || !marker.trim()}
           startIcon={
             payMutation.isPending ? (
               <CircularProgress size={16} color="inherit" />
@@ -208,9 +212,17 @@ function SplitDialog({
   const notify = useNotify();
   const splitMutation = useSplitOrder();
   const [quantitiesText, setQuantitiesText] = useState("");
+  const [supplierID, setSupplierID] = useState("");
+  const [warehouseBinID, setWarehouseBinID] = useState("");
+  const [pickupPoint, setPickupPoint] = useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setSupplierID("");
+      setWarehouseBinID("");
+      setPickupPoint("");
+      return;
+    }
     if (order.quantity > 1) {
       setQuantitiesText(`1,${order.quantity - 1}`);
       return;
@@ -241,8 +253,16 @@ function SplitDialog({
   const handleSubmit = async () => {
     if (!isValid) return;
     try {
-      await splitMutation.mutateAsync({ id: order.id, quantities });
-      notify.success("Order split successfully.");
+      await splitMutation.mutateAsync({
+        id: order.id,
+        quantities,
+        supplier_id: supplierID || undefined,
+        warehouse_bin_id: warehouseBinID || undefined,
+        pickup_point: pickupPoint || undefined,
+      });
+      isOffline
+        ? notify.info("Action queued — will sync when you reconnect.")
+        : notify.success("Order split successfully.");
       onClose();
     } catch {
       notify.error("Failed to split order.");
@@ -254,8 +274,8 @@ function SplitDialog({
       <DialogTitle>Split Order</DialogTitle>
       <DialogContent>
         {isOffline && (
-          <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>
-            {OFFLINE_MUTATION_MESSAGE}
+          <Alert severity="info" sx={{ mt: 1, mb: 2 }}>
+            Offline — this action will be queued and applied when you reconnect.
           </Alert>
         )}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -273,6 +293,30 @@ function SplitDialog({
           error={Boolean(quantitiesText.trim()) && !isValid}
           helperText={helperText}
         />
+        <TextField
+          label="Supplier ID (optional)"
+          value={supplierID}
+          onChange={(e) => setSupplierID(e.target.value)}
+          fullWidth
+          size="small"
+          margin="dense"
+        />
+        <TextField
+          label="Warehouse Bin ID (optional)"
+          value={warehouseBinID}
+          onChange={(e) => setWarehouseBinID(e.target.value)}
+          fullWidth
+          size="small"
+          margin="dense"
+        />
+        <TextField
+          label="Pickup Point (optional)"
+          value={pickupPoint}
+          onChange={(e) => setPickupPoint(e.target.value)}
+          fullWidth
+          size="small"
+          margin="dense"
+        />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} disabled={splitMutation.isPending}>
@@ -281,7 +325,7 @@ function SplitDialog({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={splitMutation.isPending || !isValid || isOffline}
+          disabled={splitMutation.isPending || !isValid}
           startIcon={
             splitMutation.isPending ? (
               <CircularProgress size={16} color="inherit" />
@@ -334,10 +378,12 @@ export default function OrderDetailPage() {
     orderQuantity > 1;
 
   const handleCancel = async () => {
-    if (!id || isOffline) return;
+    if (!id) return;
     try {
       await cancelMutation.mutateAsync(id);
-      notify.success("Order cancelled.");
+      isOffline
+        ? notify.info("Action queued — will sync when you reconnect.")
+        : notify.success("Order cancelled.");
       setCancelOpen(false);
     } catch {
       notify.error("Failed to cancel order.");
@@ -345,10 +391,12 @@ export default function OrderDetailPage() {
   };
 
   const handleRefund = async () => {
-    if (!id || isOffline) return;
+    if (!id) return;
     try {
       await refundMutation.mutateAsync(id);
-      notify.success("Order refunded.");
+      isOffline
+        ? notify.info("Action queued — will sync when you reconnect.")
+        : notify.success("Order refunded.");
       setRefundOpen(false);
     } catch {
       notify.error("Failed to refund order.");
@@ -393,7 +441,6 @@ export default function OrderDetailPage() {
               variant="outlined"
               size="small"
               onClick={() => setSplitOpen(true)}
-              disabled={isOffline}
             >
               Split
             </Button>
@@ -404,7 +451,6 @@ export default function OrderDetailPage() {
               size="small"
               color="error"
               onClick={() => setCancelOpen(true)}
-              disabled={isOffline}
             >
               Cancel Order
             </Button>
@@ -415,7 +461,6 @@ export default function OrderDetailPage() {
                 variant="outlined"
                 size="small"
                 onClick={() => setRefundOpen(true)}
-                disabled={isOffline}
               >
                 Refund
               </Button>
@@ -426,7 +471,6 @@ export default function OrderDetailPage() {
                 size="small"
                 color="success"
                 onClick={() => setPayOpen(true)}
-                disabled={isOffline}
               >
                 Record Payment
               </Button>
@@ -435,7 +479,6 @@ export default function OrderDetailPage() {
               variant="outlined"
               size="small"
               onClick={() => setNoteOpen(true)}
-              disabled={isOffline}
             >
               Add Note
             </Button>

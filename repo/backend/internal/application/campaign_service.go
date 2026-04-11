@@ -170,7 +170,7 @@ func (s *CampaignServiceImpl) Join(ctx context.Context, campaignID, userID uuid.
 	return participant, nil
 }
 
-func (s *CampaignServiceImpl) EvaluateAtCutoff(ctx context.Context, id uuid.UUID, now time.Time) error {
+func (s *CampaignServiceImpl) EvaluateAtCutoff(ctx context.Context, id uuid.UUID, now time.Time, performedBy uuid.UUID) error {
 	return withOptionalTransaction(ctx, s.txPool, func(txCtx context.Context) error {
 		campaign, err := s.campaigns.GetByID(txCtx, id)
 		if err != nil {
@@ -214,7 +214,7 @@ func (s *CampaignServiceImpl) EvaluateAtCutoff(ctx context.Context, id uuid.UUID
 				}
 			}
 		}
-		return s.audit.Log(txCtx, "campaign.evaluated", "campaign", campaign.ID, campaign.CreatedBy, map[string]interface{}{
+		return s.audit.Log(txCtx, "campaign.evaluated", "campaign", campaign.ID, performedBy, map[string]interface{}{
 			"status":    string(campaign.Status),
 			"committed": campaign.CurrentCommittedQty,
 			"min":       campaign.MinQuantity,
@@ -222,7 +222,7 @@ func (s *CampaignServiceImpl) EvaluateAtCutoff(ctx context.Context, id uuid.UUID
 	})
 }
 
-func (s *CampaignServiceImpl) Cancel(ctx context.Context, id uuid.UUID) error {
+func (s *CampaignServiceImpl) Cancel(ctx context.Context, id uuid.UUID, performedBy uuid.UUID) error {
 	return withOptionalTransaction(ctx, s.txPool, func(txCtx context.Context) error {
 		campaign, err := s.campaigns.GetByID(txCtx, id)
 		if err != nil {
@@ -259,7 +259,7 @@ func (s *CampaignServiceImpl) Cancel(ctx context.Context, id uuid.UUID) error {
 				}
 			}
 		}
-		return s.audit.Log(txCtx, "campaign.cancelled", "campaign", campaign.ID, campaign.CreatedBy, nil)
+		return s.audit.Log(txCtx, "campaign.cancelled", "campaign", campaign.ID, performedBy, nil)
 	})
 }
 

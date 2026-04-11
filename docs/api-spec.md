@@ -253,8 +253,8 @@ Retrieve aggregated KPI metrics for the operations dashboard.
 | Parameter | Type | Description |
 |---|---|---|
 | `period` | string | Time period: `daily`, `weekly`, `monthly`, `quarterly`, `yearly` |
-| `location` | uuid | Filter by location ID |
-| `coach` | uuid | Filter by coach ID |
+| `location_id` | uuid | Filter by location ID |
+| `coach_id` | uuid | Filter by coach ID |
 | `category` | string | Filter by item category |
 | `from` | date | Start date (YYYY-MM-DD) |
 | `to` | date | End date (YYYY-MM-DD) |

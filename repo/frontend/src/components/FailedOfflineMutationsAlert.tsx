@@ -4,7 +4,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import {
-  loadPendingOfflineMutations,
+  loadFailedOfflineMutations,
   removeOfflineMutation,
   type OfflineMutationEntry,
 } from '@/lib/offline-cache';
@@ -15,9 +15,7 @@ export function FailedOfflineMutationsAlert() {
   const [failedMutations, setFailedMutations] = useState<OfflineMutationEntry[]>([]);
 
   useEffect(() => {
-    loadPendingOfflineMutations().then((mutations) => {
-      setFailedMutations(mutations.filter((m) => m.status === 'failed'));
-    });
+    loadFailedOfflineMutations().then(setFailedMutations);
   }, [isOnline]);
 
   const dismiss = async (id: string) => {

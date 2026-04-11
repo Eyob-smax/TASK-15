@@ -255,7 +255,7 @@ func (h *OrderHandler) SplitOrder(c echo.Context) error {
 	for i := range children {
 		resp[i] = toOrderResponse(&children[i])
 	}
-	return c.JSON(http.StatusOK, dto.SuccessResponse{Data: resp})
+	return c.JSON(http.StatusCreated, dto.SuccessResponse{Data: resp})
 }
 
 // MergeOrders handles POST /api/v1/orders/merge.
@@ -288,7 +288,7 @@ func (h *OrderHandler) MergeOrders(c echo.Context) error {
 	if err != nil {
 		return HandleDomainError(c, err)
 	}
-	return c.JSON(http.StatusOK, dto.SuccessResponse{Data: toOrderResponse(merged)})
+	return c.JSON(http.StatusCreated, dto.SuccessResponse{Data: toOrderResponse(merged)})
 }
 
 // parseFulfillmentInput builds a FulfillmentInput from optional request fields.

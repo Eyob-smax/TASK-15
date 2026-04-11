@@ -19,7 +19,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusChip } from '@/components/StatusChip';
 import { RequireRole } from '@/lib/auth';
 import { useItem } from '@/lib/hooks/useItems';
-import { OFFLINE_MUTATION_MESSAGE, useOfflineStatus } from '@/lib/offline';
+import { useOfflineStatus } from '@/lib/offline';
 import {
   useCampaign,
   useJoinCampaign,
@@ -58,7 +58,9 @@ export default function GroupBuyDetailPage() {
     if (!id) return;
     try {
       await joinMutation.mutateAsync({ id, quantity: data.quantity });
-      notify.success('Joined campaign successfully! Check your orders.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Joined campaign successfully! Check your orders.');
       reset();
     } catch {
       notify.error('Failed to join campaign.');
@@ -69,7 +71,9 @@ export default function GroupBuyDetailPage() {
     if (!id) return;
     try {
       await cancelMutation.mutateAsync(id);
-      notify.success('Campaign cancelled.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Campaign cancelled.');
       setCancelOpen(false);
       navigate('/group-buys');
     } catch {
@@ -81,7 +85,9 @@ export default function GroupBuyDetailPage() {
     if (!id) return;
     try {
       await evaluateMutation.mutateAsync(id);
-      notify.success('Campaign evaluated.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Campaign evaluated.');
       setEvaluateOpen(false);
     } catch {
       notify.error('Failed to evaluate campaign.');
@@ -131,7 +137,6 @@ export default function GroupBuyDetailPage() {
                   variant="outlined"
                   size="small"
                   onClick={() => setEvaluateOpen(true)}
-                  disabled={isOffline}
                 >
                   Evaluate
                 </Button>
@@ -140,7 +145,6 @@ export default function GroupBuyDetailPage() {
                   size="small"
                   color="error"
                   onClick={() => setCancelOpen(true)}
-                  disabled={isOffline}
                 >
                   Cancel
                 </Button>
@@ -238,7 +242,7 @@ export default function GroupBuyDetailPage() {
             >
               <Paper variant="outlined" sx={{ p: 3 }}>
                 {isOffline && (
-                  <Alert severity="warning" sx={{ mb: 2 }}>{OFFLINE_MUTATION_MESSAGE}</Alert>
+                  <Alert severity="info" sx={{ mb: 2 }}>Offline — this action will be queued and applied when you reconnect.</Alert>
                 )}
                 <Typography variant="subtitle1" fontWeight={600} gutterBottom>
                   Join This Campaign
@@ -259,7 +263,7 @@ export default function GroupBuyDetailPage() {
                     type="submit"
                     variant="contained"
                     fullWidth
-                    disabled={isSubmitting || joinMutation.isPending || isOffline}
+                    disabled={isSubmitting || joinMutation.isPending}
                     startIcon={
                       (isSubmitting || joinMutation.isPending)
                         ? <CircularProgress size={16} color="inherit" />

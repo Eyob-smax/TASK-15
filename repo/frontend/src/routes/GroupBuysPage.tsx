@@ -20,7 +20,7 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar, type FilterField } from '@/components/FilterBar';
 import { StatusChip } from '@/components/StatusChip';
 import { useAuth } from '@/lib/auth';
-import { OFFLINE_MUTATION_MESSAGE, useOfflineStatus } from '@/lib/offline';
+import { useOfflineStatus } from '@/lib/offline';
 import { useCampaignList, useCreateCampaign } from '@/lib/hooks/useCampaigns';
 import { useNotify } from '@/lib/notifications';
 import { createCampaignSchema, type CreateCampaignFormData } from '@/lib/validation';
@@ -108,7 +108,11 @@ function CreateCampaignDialog({
         min_quantity: data.min_quantity,
         cutoff_time: data.cutoff_time,
       });
-      notify.success(submitLabel === 'Start' ? 'Group buy started successfully.' : 'Campaign created successfully.');
+      if (isOffline) {
+        notify.info('Action queued — will sync when you reconnect.');
+      } else {
+        notify.success(submitLabel === 'Start' ? 'Group buy started successfully.' : 'Campaign created successfully.');
+      }
       reset();
       onClose();
     } catch {
@@ -130,7 +134,7 @@ function CreateCampaignDialog({
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isOffline && (
-            <Alert severity="warning">{OFFLINE_MUTATION_MESSAGE}</Alert>
+            <Alert severity="info">Offline — this action will be queued and applied when you reconnect.</Alert>
           )}
           <TextField
             {...register('item_id')}
@@ -170,7 +174,7 @@ function CreateCampaignDialog({
           <Button
             type="submit"
             variant="contained"
-            disabled={isSubmitting || isOffline}
+            disabled={isSubmitting}
             startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             {submitLabel}
@@ -272,7 +276,6 @@ export default function GroupBuysPage() {
             size="small"
             startIcon={<AddIcon />}
             onClick={() => setCreateOpen(true)}
-            disabled={isOffline}
           >
             Create Campaign
           </Button>

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,8 +36,10 @@ var (
 )
 
 type integrationApp struct {
-	app *bootstrap.App
-	cfg platform.Config
+	app    *bootstrap.App
+	cfg    platform.Config
+	server *httptest.Server
+	client *http.Client
 }
 
 type errorEnvelope struct {
@@ -92,13 +95,17 @@ type itemSeedOptions struct {
 
 func newIntegrationApp(t *testing.T) *integrationApp {
 	t.Helper()
+	return newIntegrationAppWithConfig(t, integrationConfig(t))
+}
+
+func newIntegrationAppWithConfig(t *testing.T, cfg platform.Config) *integrationApp {
+	t.Helper()
 
 	apiDBMu.Lock()
 	t.Cleanup(func() {
 		apiDBMu.Unlock()
 	})
 
-	cfg := integrationConfig(t)
 	resetDatabase(t, cfg)
 
 	testDump := func(ctx context.Context, connStr, destPath string) error {
@@ -114,13 +121,28 @@ func newIntegrationApp(t *testing.T) *integrationApp {
 	if err != nil {
 		t.Fatalf("bootstrap app: %v", err)
 	}
+
+	// Start a real HTTP test server so all API calls go through the full HTTP
+	// stack (middleware, routing, serialisation) over an actual TCP connection.
+	ts := httptest.NewServer(app.Echo)
+	t.Cleanup(ts.Close)
 	t.Cleanup(func() {
 		app.Close()
 	})
 
+	// Disable automatic redirect following so tests receive the raw response
+	// status exactly as the server sends it.
+	client := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	return &integrationApp{
-		app: app,
-		cfg: cfg,
+		app:    app,
+		cfg:    cfg,
+		server: ts,
+		client: client,
 	}
 }
 
@@ -222,18 +244,19 @@ func envOr(key, fallback string) string {
 func (a *integrationApp) request(t *testing.T, method, path string, body any, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 
-	var reader *bytes.Reader
-	if body == nil {
-		reader = bytes.NewReader(nil)
-	} else {
+	var bodyReader io.Reader
+	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
 			t.Fatalf("marshal request body: %v", err)
 		}
-		reader = bytes.NewReader(payload)
+		bodyReader = bytes.NewReader(payload)
 	}
 
-	req := httptest.NewRequest(method, path, reader)
+	req, err := http.NewRequest(method, a.server.URL+path, bodyReader)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -241,9 +264,24 @@ func (a *integrationApp) request(t *testing.T, method, path string, body any, co
 		req.AddCookie(cookie)
 	}
 
-	rec := httptest.NewRecorder()
-	a.app.Echo.ServeHTTP(rec, req)
-	return rec
+	resp, err := a.client.Do(req)
+	if err != nil {
+		t.Fatalf("do request %s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+
+	// Wrap the real HTTP response in a ResponseRecorder so all existing
+	// assertions (rec.Code, rec.Body.Bytes(), rec.Header()) stay unchanged.
+	return &httptest.ResponseRecorder{
+		Code:      resp.StatusCode,
+		HeaderMap: resp.Header,
+		Body:      bytes.NewBuffer(respBody),
+	}
 }
 
 func (a *integrationApp) get(t *testing.T, path string, cookies []*http.Cookie) *httptest.ResponseRecorder {
@@ -512,15 +550,24 @@ func (a *integrationApp) login(t *testing.T, user userSeed) []*http.Cookie {
 func (a *integrationApp) reportIDByType(t *testing.T, reportType string) uuid.UUID {
 	t.Helper()
 
-	var id uuid.UUID
-	err := a.app.Pool.QueryRow(context.Background(),
-		`SELECT id FROM report_definitions WHERE report_type = $1`,
-		reportType,
-	).Scan(&id)
-	if err != nil {
-		t.Fatalf("query report id for %s: %v", reportType, err)
+	// Seed a temporary admin to authenticate the list request. Report definitions
+	// are seeded by seed.sql and are always present after resetDatabase.
+	admin := a.seedUser(t, "administrator", nil)
+	rec := a.get(t, "/api/v1/reports", a.login(t, admin))
+	requireStatus(t, rec, http.StatusOK)
+
+	reports := decodeSuccess[[]dto.ReportResponse](t, rec)
+	for _, r := range reports {
+		if r.ReportType == reportType {
+			id, err := uuid.Parse(r.ID)
+			if err != nil {
+				t.Fatalf("parse report id %q: %v", r.ID, err)
+			}
+			return id
+		}
 	}
-	return id
+	t.Fatalf("report type %q not found via GET /api/v1/reports", reportType)
+	return uuid.Nil
 }
 
 func (a *integrationApp) captchaAnswer(t *testing.T, challengeID string) string {
@@ -541,16 +588,6 @@ func (a *integrationApp) captchaAnswer(t *testing.T, challengeID string) string 
 		t.Fatalf("parse captcha challenge %q: %v", challenge, err)
 	}
 	return fmt.Sprintf("%d", x+y)
-}
-
-func (a *integrationApp) countRows(t *testing.T, query string, args ...any) int {
-	t.Helper()
-
-	var count int
-	if err := a.app.Pool.QueryRow(context.Background(), query, args...).Scan(&count); err != nil {
-		t.Fatalf("count rows: %v", err)
-	}
-	return count
 }
 
 func shortID() string {

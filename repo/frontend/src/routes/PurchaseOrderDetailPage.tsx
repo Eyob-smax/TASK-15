@@ -26,7 +26,7 @@ import { PageContainer } from '@/components/PageContainer';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusChip } from '@/components/StatusChip';
 import { RequireRole } from '@/lib/auth';
-import { OFFLINE_MUTATION_MESSAGE, useOfflineStatus } from '@/lib/offline';
+import { useOfflineStatus } from '@/lib/offline';
 import {
   usePO,
   useApprovePO,
@@ -99,7 +99,9 @@ function ReceiveDialog({
         received_unit_price: l.unitPrice,
       }));
       await receiveMutation.mutateAsync({ id: poId, lines: payload });
-      notify.success('Purchase order marked as received.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Purchase order marked as received.');
       onClose();
     } catch {
       notify.error('Failed to receive purchase order.');
@@ -111,7 +113,7 @@ function ReceiveDialog({
       <DialogTitle>Receive Purchase Order</DialogTitle>
       <DialogContent>
         {isOffline && (
-          <Alert severity="warning" sx={{ mb: 2 }}>{OFFLINE_MUTATION_MESSAGE}</Alert>
+          <Alert severity="info" sx={{ mb: 2 }}>Offline — this action will be queued and applied when you reconnect.</Alert>
         )}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Enter the received quantities and unit prices for each line.
@@ -164,7 +166,7 @@ function ReceiveDialog({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={receiveMutation.isPending || isOffline}
+          disabled={receiveMutation.isPending}
           startIcon={receiveMutation.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           Confirm Receipt
@@ -201,7 +203,9 @@ function ResolveVarianceDialog({
         resolution_notes: notes.trim(),
         quantity_change: action === 'adjustment' ? Number(quantityChange) : undefined,
       });
-      notify.success('Variance resolved.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Variance resolved.');
       setAction('adjustment');
       setNotes('');
       setQuantityChange('');
@@ -216,7 +220,7 @@ function ResolveVarianceDialog({
       <DialogTitle>Resolve Variance</DialogTitle>
       <DialogContent>
         {isOffline && (
-          <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>{OFFLINE_MUTATION_MESSAGE}</Alert>
+          <Alert severity="info" sx={{ mt: 1, mb: 2 }}>Offline — this action will be queued and applied when you reconnect.</Alert>
         )}
         <TextField
           select
@@ -258,7 +262,7 @@ function ResolveVarianceDialog({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={resolveMutation.isPending || !notes.trim() || (action === 'adjustment' && !quantityChange.trim()) || isOffline}
+          disabled={resolveMutation.isPending || !notes.trim() || (action === 'adjustment' && !quantityChange.trim())}
           startIcon={resolveMutation.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           Resolve
@@ -289,20 +293,24 @@ export default function PurchaseOrderDetailPage() {
   const { data: varianceData } = useVarianceList();
 
   const handleApprove = async () => {
-    if (!id || isOffline) return;
+    if (!id) return;
     try {
       await approveMutation.mutateAsync(id);
-      notify.success('Purchase order approved.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Purchase order approved.');
     } catch {
       notify.error('Failed to approve purchase order.');
     }
   };
 
   const handleReturn = async () => {
-    if (!id || isOffline) return;
+    if (!id) return;
     try {
       await returnMutation.mutateAsync(id);
-      notify.success('Purchase order returned.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Purchase order returned.');
       setReturnOpen(false);
     } catch {
       notify.error('Failed to return purchase order.');
@@ -310,10 +318,12 @@ export default function PurchaseOrderDetailPage() {
   };
 
   const handleVoid = async () => {
-    if (!id || isOffline) return;
+    if (!id) return;
     try {
       await voidMutation.mutateAsync(id);
-      notify.success('Purchase order voided.');
+      isOffline
+        ? notify.info('Action queued — will sync when you reconnect.')
+        : notify.success('Purchase order voided.');
       setVoidOpen(false);
     } catch {
       notify.error('Failed to void purchase order.');
@@ -376,24 +386,24 @@ export default function PurchaseOrderDetailPage() {
                 size="small"
                 color="success"
                 onClick={handleApprove}
-                disabled={approveMutation.isPending || isOffline}
+                disabled={approveMutation.isPending}
                 startIcon={approveMutation.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}
               >
                 Approve
               </Button>
             )}
             {po.status === 'approved' && (
-              <Button variant="contained" size="small" onClick={() => setReceiveOpen(true)} disabled={isOffline}>
+              <Button variant="contained" size="small" onClick={() => setReceiveOpen(true)}>
                 Receive
               </Button>
             )}
             {po.status === 'received' && (
-              <Button variant="outlined" size="small" color="warning" onClick={() => setReturnOpen(true)} disabled={isOffline}>
+              <Button variant="outlined" size="small" color="warning" onClick={() => setReturnOpen(true)}>
                 Return
               </Button>
             )}
             {!isTerminal && (
-              <Button variant="outlined" size="small" color="error" onClick={() => setVoidOpen(true)} disabled={isOffline}>
+              <Button variant="outlined" size="small" color="error" onClick={() => setVoidOpen(true)}>
                 Void
               </Button>
             )}
@@ -535,7 +545,6 @@ export default function PurchaseOrderDetailPage() {
                                 size="small"
                                 variant="outlined"
                                 onClick={() => setResolveVarianceId(v.id)}
-                                disabled={isOffline}
                               >
                                 Resolve
                               </Button>

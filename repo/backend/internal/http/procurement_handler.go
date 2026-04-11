@@ -170,12 +170,17 @@ func (h *ProcurementHandler) ReceivePO(c echo.Context) error {
 
 // ReturnPO handles POST /api/v1/purchase-orders/:id/return.
 func (h *ProcurementHandler) ReturnPO(c echo.Context) error {
+	user, ok := security.GetUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, NewErrorResponse("UNAUTHORIZED", "not authenticated"))
+	}
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, NewErrorResponse("BAD_REQUEST", "invalid purchase order id"))
 	}
 
-	if err := h.svc.Return(c.Request().Context(), id); err != nil {
+	if err := h.svc.Return(c.Request().Context(), id, user.ID); err != nil {
 		return HandleDomainError(c, err)
 	}
 
@@ -184,12 +189,17 @@ func (h *ProcurementHandler) ReturnPO(c echo.Context) error {
 
 // VoidPO handles POST /api/v1/purchase-orders/:id/void.
 func (h *ProcurementHandler) VoidPO(c echo.Context) error {
+	user, ok := security.GetUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, NewErrorResponse("UNAUTHORIZED", "not authenticated"))
+	}
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, NewErrorResponse("BAD_REQUEST", "invalid purchase order id"))
 	}
 
-	if err := h.svc.Void(c.Request().Context(), id); err != nil {
+	if err := h.svc.Void(c.Request().Context(), id, user.ID); err != nil {
 		return HandleDomainError(c, err)
 	}
 

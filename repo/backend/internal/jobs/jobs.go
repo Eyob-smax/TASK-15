@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"fitcommerce/internal/application"
+	"fitcommerce/internal/domain"
 )
 
 // AutoCloseJob periodically closes orders that have exceeded the unpaid timeout.
@@ -120,7 +121,7 @@ func (j *CutoffEvalJob) Run(ctx context.Context) {
 				continue
 			}
 			for _, c := range campaigns {
-				if err := j.campaignSvc.EvaluateAtCutoff(ctx, c.ID, t); err != nil {
+				if err := j.campaignSvc.EvaluateAtCutoff(ctx, c.ID, t, domain.SystemActorID); err != nil {
 					j.logger.Error("cutoff-eval error", "campaign_id", c.ID, "error", err)
 				}
 			}

@@ -14,6 +14,36 @@ func TestDashboard_MemberIsForbidden(t *testing.T) {
 	requireStatus(t, rec, http.StatusForbidden)
 }
 
+func TestDashboard_CoachWithoutLocationIsForbidden(t *testing.T) {
+	app := newIntegrationApp(t)
+	coach := app.seedUser(t, "coach", nil) // nil = no location assigned
+
+	rec := app.get(t, "/api/v1/dashboard/kpis", app.login(t, coach))
+	requireStatus(t, rec, http.StatusForbidden)
+
+	if decodeError(t, rec).Error.Code != "FORBIDDEN" {
+		t.Fatal("expected FORBIDDEN for coach without assigned location")
+	}
+}
+
+func TestDashboard_InvalidDateFiltersReturn422(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	cookies := app.login(t, admin)
+
+	badFrom := app.get(t, "/api/v1/dashboard/kpis?from=not-a-date", cookies)
+	requireStatus(t, badFrom, http.StatusUnprocessableEntity)
+	if decodeError(t, badFrom).Error.Code != "VALIDATION_ERROR" {
+		t.Fatal("expected VALIDATION_ERROR for invalid from date")
+	}
+
+	badTo := app.get(t, "/api/v1/dashboard/kpis?to=31-01-2026", cookies)
+	requireStatus(t, badTo, http.StatusUnprocessableEntity)
+	if decodeError(t, badTo).Error.Code != "VALIDATION_ERROR" {
+		t.Fatal("expected VALIDATION_ERROR for invalid to date")
+	}
+}
+
 func TestDashboard_AdminAndCoachCanReadKPIs(t *testing.T) {
 	app := newIntegrationApp(t)
 	location := app.seedLocation(t, "Downtown Club")

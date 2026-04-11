@@ -134,6 +134,28 @@ func (s *BackupServiceImpl) Trigger(ctx context.Context, performedBy *uuid.UUID)
 	return run, nil
 }
 
+// VerifyIntegrity re-computes the SHA-256 checksum of the backup archive and
+// compares it against the stored value. Returns the BackupRun on success or an
+// error if the file is missing, the backup is not in a completed state, or the
+// checksum does not match.
+func (s *BackupServiceImpl) VerifyIntegrity(ctx context.Context, id uuid.UUID) (*domain.BackupRun, error) {
+	run, err := s.backupRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if run.Status != domain.BackupStatusCompleted || run.Checksum == "" {
+		return nil, fmt.Errorf("backup_service.VerifyIntegrity: backup %s is not in a verifiable state (status=%s)", id, run.Status)
+	}
+	actual, err := sha256HexFile(run.ArchivePath)
+	if err != nil {
+		return nil, fmt.Errorf("backup_service.VerifyIntegrity: %w", err)
+	}
+	if actual != run.Checksum {
+		return run, fmt.Errorf("backup_service.VerifyIntegrity: checksum mismatch — stored=%s actual=%s", run.Checksum, actual)
+	}
+	return run, nil
+}
+
 // GetByID retrieves a backup run record by ID.
 func (s *BackupServiceImpl) GetByID(ctx context.Context, id uuid.UUID) (*domain.BackupRun, error) {
 	return s.backupRepo.GetByID(ctx, id)

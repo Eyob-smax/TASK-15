@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type ApiEnvelope, type ApiMessage, type PaginatedResponse } from '@/lib/api-client';
+import { enqueueOfflineMutation } from '@/lib/offline-cache';
 import type { Supplier, PurchaseOrder, VarianceRecord } from '@/lib/types';
 
 // ─── Shared ──────────────────────────────────────────────────────────────────
@@ -165,6 +166,15 @@ export function useCreatePO() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (body: CreatePOBody) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-create-po`,
+          type: 'create-po',
+          payload: body as unknown as Record<string, unknown>,
+          createdAt: Date.now(),
+        });
+        return;
+      }
       const response = await apiClient.post<ApiEnvelope<PurchaseOrder>>('/purchase-orders', body);
       return response.data;
     },
@@ -177,8 +187,18 @@ export function useCreatePO() {
 export function useApprovePO() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/approve`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-approve-po`,
+          type: 'approve-po',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/approve`, {});
+    },
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
       qc.invalidateQueries({ queryKey: ['purchase-orders', id] });
@@ -189,8 +209,18 @@ export function useApprovePO() {
 export function useReceivePO() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, lines }: ReceivePOPayload) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/receive`, { lines }),
+    mutationFn: async ({ id, lines }: ReceivePOPayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-receive-po`,
+          type: 'receive-po',
+          payload: { id, body: { lines } },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/receive`, { lines });
+    },
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
       qc.invalidateQueries({ queryKey: ['purchase-orders', id] });
@@ -202,8 +232,18 @@ export function useReceivePO() {
 export function useReturnPO() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/return`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-return-po`,
+          type: 'return-po',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/return`, {});
+    },
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
       qc.invalidateQueries({ queryKey: ['purchase-orders', id] });
@@ -214,8 +254,18 @@ export function useReturnPO() {
 export function useVoidPO() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/void`, {}),
+    mutationFn: async (id: string) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-void-po`,
+          type: 'void-po',
+          payload: { id },
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      return apiClient.post<ApiEnvelope<ApiMessage>>(`/purchase-orders/${id}/void`, {});
+    },
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
       qc.invalidateQueries({ queryKey: ['purchase-orders', id] });
@@ -253,6 +303,15 @@ export function useResolveVariance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, action, resolution_notes, quantity_change }: ResolveVariancePayload) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOfflineMutation({
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-resolve-variance`,
+          type: 'resolve-variance',
+          payload: { id, action, resolution_notes, quantity_change },
+          createdAt: Date.now(),
+        });
+        return;
+      }
       const response = await apiClient.post<ApiEnvelope<VarianceRecord>>(`/variances/${id}/resolve`, {
         action,
         resolution_notes,

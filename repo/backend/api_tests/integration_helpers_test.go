@@ -183,7 +183,9 @@ func resetDatabase(t *testing.T, cfg platform.Config) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Integration suites run full schema reset + migrations repeatedly; allow
+	// enough time to avoid flaky timeout failures on slower CI/container hosts.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {

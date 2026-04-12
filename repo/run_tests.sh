@@ -26,12 +26,12 @@ if [ "$COVERAGE" -eq 1 ]; then
   BACKEND_CMD="go mod tidy && go mod download && \
     go test ./unit_tests/... -v -count=1 -coverprofile=coverage_unit.out -covermode=atomic && \
     go tool cover -func=coverage_unit.out | tail -1 && \
-    go test ./api_tests/... -v -count=1 -coverprofile=coverage_api.out -covermode=atomic && \
+    go test ./api_tests/... -v -count=1 -timeout=30m -coverprofile=coverage_api.out -covermode=atomic && \
     go tool cover -func=coverage_api.out | tail -1"
 else
   BACKEND_CMD="go mod tidy && go mod download && \
     go test ./unit_tests/... -v -count=1 && \
-    go test ./api_tests/... -v -count=1"
+    go test ./api_tests/... -v -count=1 -timeout=30m"
 fi
 docker compose --profile test run --rm backend-test sh -c "$BACKEND_CMD"
 echo ""

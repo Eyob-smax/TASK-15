@@ -1,8 +1,11 @@
 package api_tests
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
 	"testing"
+	"time"
 
 	"fitcommerce/internal/platform"
 )
@@ -126,13 +129,27 @@ func TestBiometric_Revoke(t *testing.T) {
 	revokeRec := app.post(t, "/api/v1/admin/biometrics/"+targetUser.ID.String()+"/revoke", map[string]string{}, cookies)
 	requireStatus(t, revokeRec, http.StatusOK)
 
-	// Get after revoke — is_active should be false
-	getRec := app.get(t, "/api/v1/admin/biometrics/"+targetUser.ID.String(), cookies)
-	requireStatus(t, getRec, http.StatusOK)
+	// Validate persisted state directly: revoked enrollment must have empty encrypted_data.
+	db, err := sql.Open("pgx", app.cfg.DatabaseURL)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
 
-	getBody := decodeSuccess[map[string]any](t, getRec)
-	if getBody["is_active"] != false {
-		t.Fatalf("expected is_active false after revoke, got %v", getBody["is_active"])
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var encrypted []byte
+	err = db.QueryRowContext(
+		ctx,
+		`SELECT encrypted_data FROM biometric_enrollments WHERE user_id = $1 LIMIT 1`,
+		targetUser.ID,
+	).Scan(&encrypted)
+	if err != nil {
+		t.Fatalf("query revoked enrollment: %v", err)
+	}
+	if len(encrypted) != 0 {
+		t.Fatalf("expected encrypted_data to be cleared after revoke, got length=%d", len(encrypted))
 	}
 }
 

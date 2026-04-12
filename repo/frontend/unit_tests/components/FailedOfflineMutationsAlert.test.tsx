@@ -4,16 +4,18 @@ import { FailedOfflineMutationsAlert } from "@/components/FailedOfflineMutations
 import { OfflineStatusProvider } from "@/lib/offline";
 import type { ReactNode } from "react";
 
-const mockLoadPending = vi.fn();
+const mockLoadFailed = vi.fn();
 const mockRemove = vi.fn();
 
 vi.mock("@/lib/offline-cache", () => ({
-  loadPendingOfflineMutations: (...args: unknown[]) => mockLoadPending(...args),
+  loadFailedOfflineMutations: (...args: unknown[]) => mockLoadFailed(...args),
   removeOfflineMutation: (...args: unknown[]) => mockRemove(...args),
 }));
 
 function Wrapper({ children }: { children: ReactNode }) {
-  return <OfflineStatusProvider lastSyncAt={null}>{children}</OfflineStatusProvider>;
+  return (
+    <OfflineStatusProvider lastSyncAt={null}>{children}</OfflineStatusProvider>
+  );
 }
 
 describe("FailedOfflineMutationsAlert", () => {
@@ -23,41 +25,41 @@ describe("FailedOfflineMutationsAlert", () => {
   });
 
   it("renders nothing when there are no mutations", async () => {
-    mockLoadPending.mockResolvedValue([]);
+    mockLoadFailed.mockResolvedValue([]);
 
     const { container } = render(
       <Wrapper>
         <FailedOfflineMutationsAlert />
-      </Wrapper>
+      </Wrapper>,
     );
 
-    await waitFor(() => expect(mockLoadPending).toHaveBeenCalled());
+    await waitFor(() => expect(mockLoadFailed).toHaveBeenCalled());
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders nothing when all mutations are pending (not failed)", async () => {
-    mockLoadPending.mockResolvedValue([
+  it("renders failed entries even when no error message is present", async () => {
+    mockLoadFailed.mockResolvedValue([
       {
         id: "q1",
         type: "create-item",
         payload: {},
         createdAt: Date.now(),
-        status: "pending",
+        status: "failed",
       },
     ]);
 
-    const { container } = render(
+    render(
       <Wrapper>
         <FailedOfflineMutationsAlert />
-      </Wrapper>
+      </Wrapper>,
     );
 
-    await waitFor(() => expect(mockLoadPending).toHaveBeenCalled());
-    expect(container.firstChild).toBeNull();
+    await waitFor(() => expect(mockLoadFailed).toHaveBeenCalled());
+    expect(screen.getByText(/create-item/i)).toBeInTheDocument();
   });
 
   it("renders alert with details when failed entries exist", async () => {
-    mockLoadPending.mockResolvedValue([
+    mockLoadFailed.mockResolvedValue([
       {
         id: "q2",
         type: "run-export",
@@ -71,18 +73,20 @@ describe("FailedOfflineMutationsAlert", () => {
     render(
       <Wrapper>
         <FailedOfflineMutationsAlert />
-      </Wrapper>
+      </Wrapper>,
     );
 
     await waitFor(() =>
-      expect(screen.getByText(/queued action.*failed to sync/i)).toBeInTheDocument()
+      expect(
+        screen.getByText(/queued action.*failed to sync/i),
+      ).toBeInTheDocument(),
     );
     expect(screen.getByText(/run-export/i)).toBeInTheDocument();
     expect(screen.getByText(/server rejected/i)).toBeInTheDocument();
   });
 
   it("calls removeOfflineMutation and hides the entry when dismissed", async () => {
-    mockLoadPending.mockResolvedValue([
+    mockLoadFailed.mockResolvedValue([
       {
         id: "q3",
         type: "update-item",
@@ -96,14 +100,18 @@ describe("FailedOfflineMutationsAlert", () => {
     render(
       <Wrapper>
         <FailedOfflineMutationsAlert />
-      </Wrapper>
+      </Wrapper>,
     );
 
-    await waitFor(() => expect(screen.getByText(/dismiss/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/dismiss/i)).toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByText(/dismiss/i));
 
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("q3"));
-    await waitFor(() => expect(screen.queryByText(/update-item/i)).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText(/update-item/i)).not.toBeInTheDocument(),
+    );
   });
 });

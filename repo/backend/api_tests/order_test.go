@@ -246,3 +246,242 @@ func TestOrders_ManagerCanMergeOrders(t *testing.T) {
 	}, memberCookies)
 	requireStatus(t, forbiddenRec, http.StatusForbidden)
 }
+
+func TestOrders_MemberCanCancelOwnOrderButNotOthers(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	memberA := app.seedUser(t, "member", nil)
+	memberB := app.seedUser(t, "member", nil)
+	item := app.seedItem(t, itemSeedOptions{
+		CreatedBy: admin.ID,
+		Name:      "Cancelable Item",
+		Status:    "published",
+		Quantity:  20,
+		AvailabilityWindows: []timeWindow{{
+			Start: time.Now().UTC().Add(-1 * time.Hour),
+			End:   time.Now().UTC().Add(48 * time.Hour),
+		}},
+	})
+
+	memberACookies := app.login(t, memberA)
+	memberBCookies := app.login(t, memberB)
+
+	orderARec := app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 2,
+	}, memberACookies)
+	requireStatus(t, orderARec, http.StatusCreated)
+	orderAID := decodeSuccess[map[string]any](t, orderARec)["id"].(string)
+
+	orderBRec := app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 1,
+	}, memberBCookies)
+	requireStatus(t, orderBRec, http.StatusCreated)
+	orderBID := decodeSuccess[map[string]any](t, orderBRec)["id"].(string)
+
+	cancelOwnRec := app.post(t, "/api/v1/orders/"+orderAID+"/cancel", map[string]any{}, memberACookies)
+	requireStatus(t, cancelOwnRec, http.StatusOK)
+
+	cancelOtherRec := app.post(t, "/api/v1/orders/"+orderBID+"/cancel", map[string]any{}, memberACookies)
+	requireStatus(t, cancelOtherRec, http.StatusForbidden)
+}
+
+func TestOrders_ManagerListIncludesAllOrders(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	manager := app.seedUser(t, "operations_manager", nil)
+	memberA := app.seedUser(t, "member", nil)
+	memberB := app.seedUser(t, "member", nil)
+	item := app.seedItem(t, itemSeedOptions{
+		CreatedBy: admin.ID,
+		Name:      "List-All Item",
+		Status:    "published",
+		Quantity:  20,
+		AvailabilityWindows: []timeWindow{{
+			Start: time.Now().UTC().Add(-1 * time.Hour),
+			End:   time.Now().UTC().Add(48 * time.Hour),
+		}},
+	})
+
+	requireStatus(t, app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 2,
+	}, app.login(t, memberA)), http.StatusCreated)
+
+	requireStatus(t, app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 1,
+	}, app.login(t, memberB)), http.StatusCreated)
+
+	listRec := app.get(t, "/api/v1/orders", app.login(t, manager))
+	requireStatus(t, listRec, http.StatusOK)
+	rows, _ := decodePaginated[map[string]any](t, listRec)
+	if len(rows) < 2 {
+		t.Fatalf("expected manager to list at least two orders, got %#v", rows)
+	}
+}
+
+func TestOrders_InvalidIDsAndFulfillmentParsingBranches(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	manager := app.seedUser(t, "operations_manager", nil)
+	member := app.seedUser(t, "member", nil)
+	item := app.seedItem(t, itemSeedOptions{
+		CreatedBy: admin.ID,
+		Name:      "Parse Branch Item",
+		Status:    "published",
+		Quantity:  20,
+		AvailabilityWindows: []timeWindow{{
+			Start: time.Now().UTC().Add(-1 * time.Hour),
+			End:   time.Now().UTC().Add(48 * time.Hour),
+		}},
+	})
+
+	memberCookies := app.login(t, member)
+	managerCookies := app.login(t, manager)
+	supplierID := app.seedSupplier(t, "Order Parse Supplier")
+
+	badCreateRec := app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":     item.ID.String(),
+		"quantity":    1,
+		"campaign_id": "not-a-uuid",
+	}, memberCookies)
+	requireStatus(t, badCreateRec, http.StatusBadRequest)
+
+	orderRec := app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 3,
+	}, memberCookies)
+	requireStatus(t, orderRec, http.StatusCreated)
+	orderID := decodeSuccess[map[string]any](t, orderRec)["id"].(string)
+
+	badOrderGetRec := app.get(t, "/api/v1/orders/not-a-uuid", managerCookies)
+	requireStatus(t, badOrderGetRec, http.StatusBadRequest)
+
+	badSplitSupplierRec := app.post(t, "/api/v1/orders/"+orderID+"/split", map[string]any{
+		"quantities":  []int{1, 2},
+		"supplier_id": "not-a-uuid",
+	}, managerCookies)
+	requireStatus(t, badSplitSupplierRec, http.StatusBadRequest)
+
+	badSplitBinRec := app.post(t, "/api/v1/orders/"+orderID+"/split", map[string]any{
+		"quantities":       []int{1, 2},
+		"warehouse_bin_id": "not-a-uuid",
+	}, managerCookies)
+	requireStatus(t, badSplitBinRec, http.StatusBadRequest)
+
+	goodSplitRec := app.post(t, "/api/v1/orders/"+orderID+"/split", map[string]any{
+		"quantities":       []int{1, 2},
+		"supplier_id":      supplierID.String(),
+		"pickup_point":     "front-desk",
+	}, managerCookies)
+	requireStatus(t, goodSplitRec, http.StatusCreated)
+
+	orderForBinRec := app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 2,
+	}, memberCookies)
+	requireStatus(t, orderForBinRec, http.StatusCreated)
+	orderForBinID := decodeSuccess[map[string]any](t, orderForBinRec)["id"].(string)
+
+	parseWarehouseUUIDRec := app.post(t, "/api/v1/orders/"+orderForBinID+"/split", map[string]any{
+		"quantities":       []int{1, 1},
+		"warehouse_bin_id": "33333333-3333-3333-3333-333333333333",
+	}, managerCookies)
+	if parseWarehouseUUIDRec.Code == http.StatusBadRequest {
+		t.Fatalf("expected warehouse_bin_id UUID parse to succeed, got %d: %s", parseWarehouseUUIDRec.Code, parseWarehouseUUIDRec.Body.String())
+	}
+
+	badMergeRec := app.post(t, "/api/v1/orders/merge", map[string]any{
+		"order_ids": []string{"not-a-uuid", orderID},
+	}, managerCookies)
+	requireStatus(t, badMergeRec, http.StatusBadRequest)
+
+	badPayRec := app.post(t, "/api/v1/orders/not-a-uuid/pay", map[string]any{}, managerCookies)
+	requireStatus(t, badPayRec, http.StatusBadRequest)
+
+	badRefundRec := app.post(t, "/api/v1/orders/not-a-uuid/refund", map[string]any{}, managerCookies)
+	requireStatus(t, badRefundRec, http.StatusBadRequest)
+
+	badNoteRec := app.post(t, "/api/v1/orders/not-a-uuid/notes", map[string]any{"note": "x"}, managerCookies)
+	requireStatus(t, badNoteRec, http.StatusBadRequest)
+
+	badTimelineRec := app.get(t, "/api/v1/orders/not-a-uuid/timeline", managerCookies)
+	requireStatus(t, badTimelineRec, http.StatusBadRequest)
+
+	badCancelRec := app.post(t, "/api/v1/orders/not-a-uuid/cancel", map[string]any{}, memberCookies)
+	requireStatus(t, badCancelRec, http.StatusBadRequest)
+}
+
+func TestOrders_ResponseOptionalFieldsCoverage(t *testing.T) {
+	app := newIntegrationApp(t)
+	ops := app.seedUser(t, "operations_manager", nil)
+	managerCookies := app.login(t, ops)
+	member := app.seedUser(t, "member", nil)
+	memberCookies := app.login(t, member)
+
+	item := app.seedItem(t, itemSeedOptions{
+		CreatedBy: ops.ID,
+		Name:      "Optional Fields Item",
+		Status:    "published",
+		Quantity:  20,
+		AvailabilityWindows: []timeWindow{{
+			Start: time.Now().UTC().Add(-1 * time.Hour),
+			End:   time.Now().UTC().Add(48 * time.Hour),
+		}},
+	})
+
+	campaignRec := app.post(t, "/api/v1/campaigns", map[string]any{
+		"item_id":      item.ID.String(),
+		"min_quantity": 2,
+		"max_quantity": 10,
+		"cutoff_time":  time.Now().UTC().Add(12 * time.Hour).Format(time.RFC3339),
+	}, managerCookies)
+	requireStatus(t, campaignRec, http.StatusCreated)
+	campaignID := decodeSuccess[map[string]any](t, campaignRec)["id"].(string)
+
+	joinRec := app.post(t, "/api/v1/campaigns/"+campaignID+"/join", map[string]any{
+		"quantity": 1,
+	}, memberCookies)
+	requireStatus(t, joinRec, http.StatusCreated)
+	campaignOrderID := decodeSuccess[map[string]any](t, joinRec)["order_id"].(string)
+
+	payRec := app.post(t, "/api/v1/orders/"+campaignOrderID+"/pay", map[string]any{
+		"settlement_marker": "campaign-pay-001",
+	}, managerCookies)
+	requireStatus(t, payRec, http.StatusOK)
+
+	refundRec := app.post(t, "/api/v1/orders/"+campaignOrderID+"/refund", map[string]any{}, managerCookies)
+	requireStatus(t, refundRec, http.StatusOK)
+
+	campaignOrderGetRec := app.get(t, "/api/v1/orders/"+campaignOrderID, managerCookies)
+	requireStatus(t, campaignOrderGetRec, http.StatusOK)
+	campaignOrder := decodeSuccess[map[string]any](t, campaignOrderGetRec)
+	if campaignOrder["campaign_id"] != campaignID {
+		t.Fatalf("expected campaign_id %s, got %#v", campaignID, campaignOrder["campaign_id"])
+	}
+	if campaignOrder["paid_at"] == nil {
+		t.Fatal("expected paid_at to be set after payment")
+	}
+	if campaignOrder["refunded_at"] == nil {
+		t.Fatal("expected refunded_at to be set after refund")
+	}
+
+	cancelOrderRec := app.post(t, "/api/v1/orders", map[string]any{
+		"item_id":  item.ID.String(),
+		"quantity": 1,
+	}, memberCookies)
+	requireStatus(t, cancelOrderRec, http.StatusCreated)
+	cancelOrderID := decodeSuccess[map[string]any](t, cancelOrderRec)["id"].(string)
+
+	cancelRec := app.post(t, "/api/v1/orders/"+cancelOrderID+"/cancel", map[string]any{}, memberCookies)
+	requireStatus(t, cancelRec, http.StatusOK)
+
+	cancelledGetRec := app.get(t, "/api/v1/orders/"+cancelOrderID, managerCookies)
+	requireStatus(t, cancelledGetRec, http.StatusOK)
+	cancelledOrder := decodeSuccess[map[string]any](t, cancelledGetRec)
+	if cancelledOrder["cancelled_at"] == nil {
+		t.Fatal("expected cancelled_at to be set after cancellation")
+	}
+}

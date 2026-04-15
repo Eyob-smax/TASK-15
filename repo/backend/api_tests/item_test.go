@@ -129,6 +129,16 @@ func TestItems_PublishAndBatchEditUseRealValidation(t *testing.T) {
 	publishRec := app.post(t, "/api/v1/items/"+validID+"/publish", map[string]any{}, adminCookies)
 	requireStatus(t, publishRec, http.StatusOK)
 
+	listRec := app.get(t, "/api/v1/items?status=published", adminCookies)
+	requireStatus(t, listRec, http.StatusOK)
+	listed, _ := decodePaginated[map[string]any](t, listRec)
+	if len(listed) == 0 {
+		t.Fatal("expected list endpoint to return published items")
+	}
+
+	unpublishRec := app.post(t, "/api/v1/items/"+validID+"/unpublish", map[string]any{}, adminCookies)
+	requireStatus(t, unpublishRec, http.StatusOK)
+
 	batchRec := app.post(t, "/api/v1/items/batch-edit", map[string]any{
 		"edits": []map[string]string{
 			{"item_id": validID, "field": "unit_price", "new_value": "129.99"},

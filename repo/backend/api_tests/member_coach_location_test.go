@@ -6,6 +6,96 @@ import (
 	"time"
 )
 
+func TestPersonnel_AdminCanCreateLocationMemberAndCoach(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	adminCookies := app.login(t, admin)
+
+	createLocationRec := app.post(t, "/api/v1/locations", map[string]any{
+		"name":     "Central Club",
+		"address":  "77 Core Road",
+		"timezone": "UTC",
+	}, adminCookies)
+	requireStatus(t, createLocationRec, http.StatusCreated)
+	location := decodeSuccess[map[string]any](t, createLocationRec)
+
+	memberUser := app.seedUser(t, "member", nil)
+	createMemberRec := app.post(t, "/api/v1/members", map[string]any{
+		"user_id":     memberUser.ID.String(),
+		"location_id": location["id"].(string),
+	}, adminCookies)
+	requireStatus(t, createMemberRec, http.StatusCreated)
+	member := decodeSuccess[map[string]any](t, createMemberRec)
+
+	coachUser := app.seedUser(t, "coach", nil)
+	createCoachRec := app.post(t, "/api/v1/coaches", map[string]any{
+		"user_id":        coachUser.ID.String(),
+		"location_id":    location["id"].(string),
+		"specialization": "Mobility",
+	}, adminCookies)
+	requireStatus(t, createCoachRec, http.StatusCreated)
+	coach := decodeSuccess[map[string]any](t, createCoachRec)
+
+	memberGetRec := app.get(t, "/api/v1/members/"+member["id"].(string), adminCookies)
+	requireStatus(t, memberGetRec, http.StatusOK)
+
+	coachGetRec := app.get(t, "/api/v1/coaches/"+coach["id"].(string), adminCookies)
+	requireStatus(t, coachGetRec, http.StatusOK)
+
+	locationsRec := app.get(t, "/api/v1/locations", adminCookies)
+	requireStatus(t, locationsRec, http.StatusOK)
+	locs, _ := decodePaginated[map[string]any](t, locationsRec)
+	if len(locs) == 0 {
+		t.Fatal("expected at least one location in admin list")
+	}
+}
+
+func TestPersonnel_BadIDsAndValidationReturnExpectedStatus(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	adminCookies := app.login(t, admin)
+
+	badLocationCreate := app.post(t, "/api/v1/locations", map[string]any{}, adminCookies)
+	requireStatus(t, badLocationCreate, http.StatusUnprocessableEntity)
+
+	badMemberCreate := app.post(t, "/api/v1/members", map[string]any{
+		"user_id":     "not-a-uuid",
+		"location_id": "not-a-uuid",
+	}, adminCookies)
+	requireStatus(t, badMemberCreate, http.StatusBadRequest)
+
+	badCoachCreate := app.post(t, "/api/v1/coaches", map[string]any{
+		"user_id":     "not-a-uuid",
+		"location_id": "not-a-uuid",
+	}, adminCookies)
+	requireStatus(t, badCoachCreate, http.StatusBadRequest)
+
+	badMemberList := app.get(t, "/api/v1/members?location_id=bad-uuid", adminCookies)
+	requireStatus(t, badMemberList, http.StatusBadRequest)
+
+	badCoachList := app.get(t, "/api/v1/coaches?location_id=bad-uuid", adminCookies)
+	requireStatus(t, badCoachList, http.StatusBadRequest)
+
+	badLocationGet := app.get(t, "/api/v1/locations/not-a-uuid", adminCookies)
+	requireStatus(t, badLocationGet, http.StatusBadRequest)
+
+	badMemberGet := app.get(t, "/api/v1/members/not-a-uuid", adminCookies)
+	requireStatus(t, badMemberGet, http.StatusBadRequest)
+
+	badCoachGet := app.get(t, "/api/v1/coaches/not-a-uuid", adminCookies)
+	requireStatus(t, badCoachGet, http.StatusBadRequest)
+}
+
+func TestPersonnel_LocationGetIsForbiddenForOtherAssignedLocation(t *testing.T) {
+	app := newIntegrationApp(t)
+	locationA := app.seedLocation(t, "Ops Base")
+	locationB := app.seedLocation(t, "Other Base")
+	ops := app.seedUser(t, "operations_manager", &locationA.ID)
+
+	forbiddenRec := app.get(t, "/api/v1/locations/"+locationB.ID.String(), app.login(t, ops))
+	requireStatus(t, forbiddenRec, http.StatusForbidden)
+}
+
 func TestPersonnel_OperationsManagerIsScopedToAssignedLocation(t *testing.T) {
 	app := newIntegrationApp(t)
 	locationA := app.seedLocation(t, "North Club")

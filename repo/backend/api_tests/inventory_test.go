@@ -71,6 +71,7 @@ func TestInventory_CreateAdjustmentAndWarehouseBin(t *testing.T) {
 		"description":  "Primary rack bin",
 	}, opsCookies)
 	requireStatus(t, binRec, http.StatusCreated)
+	binID := decodeSuccess[map[string]any](t, binRec)["id"].(string)
 
 	adjustRec := app.post(t, "/api/v1/inventory/adjustments", map[string]any{
 		"item_id":         item.ID.String(),
@@ -91,5 +92,12 @@ func TestInventory_CreateAdjustmentAndWarehouseBin(t *testing.T) {
 	bins, _ := decodePaginated[map[string]any](t, listBinsRec)
 	if len(bins) != 1 {
 		t.Fatalf("expected one warehouse bin, got %d", len(bins))
+	}
+
+	getBinRec := app.get(t, "/api/v1/warehouse-bins/"+binID, opsCookies)
+	requireStatus(t, getBinRec, http.StatusOK)
+	bin := decodeSuccess[map[string]any](t, getBinRec)
+	if bin["name"] != "BIN-A1" {
+		t.Fatalf("expected BIN-A1 from bin detail endpoint, got %#v", bin["name"])
 	}
 }

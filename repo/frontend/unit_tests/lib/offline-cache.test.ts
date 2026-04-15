@@ -1,5 +1,19 @@
-import { describe, it, expect } from "vitest";
-import { isOfflineCacheableQueryKey } from "@/lib/offline-cache";
+import { describe, it, expect, beforeEach } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  isOfflineCacheableQueryKey,
+  hydrateOfflineQueryCache,
+  loadPersistedQuerySnapshot,
+  persistOfflineQueryCache,
+  loadPendingOfflineMutations,
+  loadFailedOfflineMutations,
+  enqueueOfflineMutation,
+  markOfflineMutationFailed,
+  clearFailedOfflineMutations,
+  removeOfflineMutation,
+  setOfflineItemIDMapping,
+  resolveOfflineItemID,
+} from "@/lib/offline-cache";
 
 // ─── Existing operational roots (regression guard) ────────────────────────────
 
@@ -97,5 +111,77 @@ describe("isOfflineCacheableQueryKey — edge cases", () => {
     expect(isOfflineCacheableQueryKey([42])).toBe(false);
     expect(isOfflineCacheableQueryKey([null])).toBe(false);
     expect(isOfflineCacheableQueryKey([{ root: "orders" }])).toBe(false);
+  });
+});
+
+// ─── hydrateOfflineQueryCache ────────────────────────────────────────────────
+
+describe("hydrateOfflineQueryCache", () => {
+  it("no-ops when snapshot is null", () => {
+    const qc = new QueryClient();
+    expect(() => hydrateOfflineQueryCache(qc, null)).not.toThrow();
+  });
+});
+
+// ─── IDB-backed operations without IndexedDB ─────────────────────────────────
+//
+// jsdom does not provide window.indexedDB. Every IDB-backed function should
+// hit its early-return branch and resolve without error. These tests exercise
+// those fallback paths to raise coverage without needing a real polyfill.
+
+describe("IDB-backed operations fall back cleanly when IndexedDB is absent", () => {
+  beforeEach(() => {
+    // Ensure the early-return branch fires even if some upstream setup added a
+    // stub.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ("indexedDB" in window) delete (window as any).indexedDB;
+  });
+
+  it("loadPersistedQuerySnapshot returns null", async () => {
+    await expect(loadPersistedQuerySnapshot()).resolves.toBeNull();
+  });
+
+  it("persistOfflineQueryCache returns null", async () => {
+    const qc = new QueryClient();
+    await expect(persistOfflineQueryCache(qc)).resolves.toBeNull();
+  });
+
+  it("loadPendingOfflineMutations returns empty array", async () => {
+    await expect(loadPendingOfflineMutations()).resolves.toEqual([]);
+  });
+
+  it("loadFailedOfflineMutations returns empty array", async () => {
+    await expect(loadFailedOfflineMutations()).resolves.toEqual([]);
+  });
+
+  it("enqueueOfflineMutation resolves silently", async () => {
+    await expect(
+      enqueueOfflineMutation({
+        id: "1",
+        type: "create-item",
+        payload: { name: "x" },
+        createdAt: Date.now(),
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("markOfflineMutationFailed resolves silently", async () => {
+    await expect(markOfflineMutationFailed("1", "boom")).resolves.toBeUndefined();
+  });
+
+  it("clearFailedOfflineMutations resolves silently", async () => {
+    await expect(clearFailedOfflineMutations()).resolves.toBeUndefined();
+  });
+
+  it("removeOfflineMutation resolves silently", async () => {
+    await expect(removeOfflineMutation("1")).resolves.toBeUndefined();
+  });
+
+  it("setOfflineItemIDMapping resolves silently", async () => {
+    await expect(setOfflineItemIDMapping("temp", "real")).resolves.toBeUndefined();
+  });
+
+  it("resolveOfflineItemID returns the original id", async () => {
+    await expect(resolveOfflineItemID("temp-123")).resolves.toBe("temp-123");
   });
 });

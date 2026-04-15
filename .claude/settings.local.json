@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Read(//tmp/**)",
+      "Bash(grep \"0.0%$\" /tmp/cov_func_full.txt)",
+      "Bash(awk '{split\\($1,a,\":\"\\); print a[1]}')",
+      "Bash(grep -E \"0.0%$\" /tmp/cov_func_full.txt)",
+      "Bash(grep -n \"LandedCostEntry\\\\|LandedCost\" \"C:/Users/OMEN/Desktop/Eyoba/Claude/Changes_requested_Tasks/TASK-15/repo/backend/internal/domain/\"*.go)",
+      "Bash(grep -n \"newItemService\\\\|mockItemRepo \" unit_tests/catalog/*.go)",
+      "Bash(grep -n \"newMockLandedCostRepo\\\\|landedCostRepo\\\\b\" unit_tests/procurement/*.go)",
+      "Bash(grep -n \"POStatus\" internal/domain/*.go)",
+      "Bash(ls src/**/*.test.*)"
+    ]
+  }
+}

@@ -53,14 +53,14 @@ describe('useUserList / useUser', () => {
   it('useUserList forwards filter params', async () => {
     mockGet.mockResolvedValue({ data: [], total: 0 });
     renderHook(
-      () => useUserList({ role: 'admin', status: 'active', search: 'alice', page: 3 }),
+      () => useUserList({ role: 'administrator', status: 'active', search: 'alice', page: 3 }),
       { wrapper },
     );
     await waitFor(() => expect(mockGet).toHaveBeenCalled());
     expect(mockGet).toHaveBeenCalledWith(
       '/admin/users',
       expect.objectContaining({
-        role: 'admin',
+        role: 'administrator',
         status: 'active',
         search: 'alice',
         page: 3,
@@ -92,7 +92,7 @@ describe('useCreateUser / useUpdateUser / useDeactivateUser', () => {
       await result.current.mutateAsync({
         email: 'a@b.c',
         display_name: 'Alice',
-        role: 'admin',
+        role: 'administrator',
         password: 'pw',
       });
     });

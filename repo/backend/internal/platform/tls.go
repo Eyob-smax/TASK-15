@@ -23,6 +23,15 @@ func EnsureServerTLSFiles(certFile, keyFile string) (resolvedCertFile, resolvedK
 		if certFile == "" || keyFile == "" {
 			return "", "", nil, fmt.Errorf("both certificate and key files must be provided together")
 		}
+		if filesExist(certFile, keyFile) {
+			return certFile, keyFile, func() {}, nil
+		}
+		if err := ensureTLSDir(certFile, keyFile); err != nil {
+			return "", "", nil, err
+		}
+		if err := writeSelfSignedCertificate(certFile, keyFile); err != nil {
+			return "", "", nil, err
+		}
 		return certFile, keyFile, func() {}, nil
 	}
 
@@ -44,6 +53,27 @@ func EnsureServerTLSFiles(certFile, keyFile string) (resolvedCertFile, resolvedK
 	}
 
 	return resolvedCertFile, resolvedKeyFile, cleanup, nil
+}
+
+func filesExist(paths ...string) bool {
+	for _, path := range paths {
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			return false
+		}
+	}
+	return true
+}
+
+func ensureTLSDir(certFile, keyFile string) error {
+	certDir := filepath.Dir(certFile)
+	keyDir := filepath.Dir(keyFile)
+	if err := os.MkdirAll(certDir, 0o755); err != nil {
+		return fmt.Errorf("create cert dir: %w", err)
+	}
+	if err := os.MkdirAll(keyDir, 0o755); err != nil {
+		return fmt.Errorf("create key dir: %w", err)
+	}
+	return nil
 }
 
 func writeSelfSignedCertificate(certPath, keyPath string) error {

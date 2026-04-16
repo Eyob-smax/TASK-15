@@ -74,3 +74,83 @@ func TestCampaigns_OperationsManagerCanCreateAndMemberCanJoin(t *testing.T) {
 		t.Fatalf("expected current_committed_qty 2, got %#v", got["current_committed_qty"])
 	}
 }
+
+func TestCampaigns_ListCancelAndEvaluateEndpoints(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	member := app.seedUser(t, "member", nil)
+	adminCookies := app.login(t, admin)
+
+	itemA := app.seedItem(t, itemSeedOptions{
+		CreatedBy: admin.ID,
+		Name:      "Eval Target",
+		Status:    "published",
+		Quantity:  9,
+		AvailabilityWindows: []timeWindow{{
+			Start: time.Now().UTC().Add(-2 * time.Hour),
+			End:   time.Now().UTC().Add(24 * time.Hour),
+		}},
+	})
+
+	evalCreateRec := app.post(t, "/api/v1/campaigns", map[string]any{
+		"item_id":      itemA.ID.String(),
+		"min_quantity": 5,
+		"cutoff_time":  time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339),
+	}, adminCookies)
+	requireStatus(t, evalCreateRec, http.StatusCreated)
+	evalCampaignID := decodeSuccess[map[string]any](t, evalCreateRec)["id"].(string)
+
+	itemB := app.seedItem(t, itemSeedOptions{
+		CreatedBy: admin.ID,
+		Name:      "Cancel Target",
+		Status:    "published",
+		Quantity:  7,
+		AvailabilityWindows: []timeWindow{{
+			Start: time.Now().UTC().Add(-2 * time.Hour),
+			End:   time.Now().UTC().Add(24 * time.Hour),
+		}},
+	})
+
+	cancelCreateRec := app.post(t, "/api/v1/campaigns", map[string]any{
+		"item_id":      itemB.ID.String(),
+		"min_quantity": 2,
+		"cutoff_time":  time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
+	}, adminCookies)
+	requireStatus(t, cancelCreateRec, http.StatusCreated)
+	cancelCampaignID := decodeSuccess[map[string]any](t, cancelCreateRec)["id"].(string)
+
+	listRec := app.get(t, "/api/v1/campaigns", adminCookies)
+	requireStatus(t, listRec, http.StatusOK)
+	listRows, _ := decodePaginated[map[string]any](t, listRec)
+	if len(listRows) == 0 {
+		t.Fatal("expected campaigns list to include created records")
+	}
+
+	evaluateRec := app.post(t, "/api/v1/campaigns/"+evalCampaignID+"/evaluate", map[string]any{}, adminCookies)
+	requireStatus(t, evaluateRec, http.StatusOK)
+
+	evaluatedGetRec := app.get(t, "/api/v1/campaigns/"+evalCampaignID, adminCookies)
+	requireStatus(t, evaluatedGetRec, http.StatusOK)
+	evaluatedCampaign := decodeSuccess[map[string]any](t, evaluatedGetRec)
+	if evaluatedCampaign["evaluated_at"] == nil {
+		t.Fatalf("expected evaluated_at after evaluation, got %#v", evaluatedCampaign)
+	}
+
+	cancelRec := app.post(t, "/api/v1/campaigns/"+cancelCampaignID+"/cancel", map[string]any{}, adminCookies)
+	requireStatus(t, cancelRec, http.StatusOK)
+
+	forbiddenCancel := app.post(t, "/api/v1/campaigns/"+cancelCampaignID+"/cancel", map[string]any{}, app.login(t, member))
+	requireStatus(t, forbiddenCancel, http.StatusForbidden)
+}
+
+func TestCampaigns_CancelAndEvaluateRejectInvalidCampaignID(t *testing.T) {
+	app := newIntegrationApp(t)
+	admin := app.seedUser(t, "administrator", nil)
+	adminCookies := app.login(t, admin)
+
+	badCancelRec := app.post(t, "/api/v1/campaigns/not-a-uuid/cancel", map[string]any{}, adminCookies)
+	requireStatus(t, badCancelRec, http.StatusBadRequest)
+
+	badEvaluateRec := app.post(t, "/api/v1/campaigns/not-a-uuid/evaluate", map[string]any{}, adminCookies)
+	requireStatus(t, badEvaluateRec, http.StatusBadRequest)
+}

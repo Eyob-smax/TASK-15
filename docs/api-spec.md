@@ -19,6 +19,20 @@ Session-based authentication using HTTP cookies.
 - The `AuthMiddleware` validates the session on every request to a protected endpoint.
 - Sessions have a 30-minute idle timeout and a 12-hour absolute timeout.
 
+### Demo Credentials (For QA/UAT)
+
+Use these role accounts for permission and access verification:
+
+| Role | Email | Password |
+|---|---|---|
+| Administrator | admin.demo@fitcommerce.local | Password123! |
+| Operations Manager | ops.demo@fitcommerce.local | Password123! |
+| Procurement Specialist | procurement.demo@fitcommerce.local | Password123! |
+| Coach | coach.demo@fitcommerce.local | Password123! |
+| Member | member.demo@fitcommerce.local | Password123! |
+
+Note: `backend/database/seeds/seed.sql` does not create active human login users by default. Ensure your environment bootstrap/seed process provisions the demo users above.
+
 ### Error Envelope
 
 All error responses use the following structure:
